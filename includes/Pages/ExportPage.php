@@ -1,0 +1,248 @@
+<?php
+
+namespace HTWarehouse\Pages;
+
+use HTWarehouse\Services\CostCalculator;
+
+defined('ABSPATH') || exit;
+
+class ExportPage
+{
+
+    public static function render(): void
+    {
+        if (! current_user_can('manage_options')) wp_die('Unauthorized');
+        include HTW_PLUGIN_DIR . 'templates/exports/list.php';
+    }
+
+    // ── AJAX: Save draft order ─────────────────────────────────────────────────
+    public static function ajax_save(): void
+    {
+        check_ajax_referer('htw_nonce', 'nonce');
+        if (! current_user_can('manage_options')) wp_send_json_error('Unauthorized', 403);
+
+        global $wpdb;
+
+        $id            = absint($_POST['id'] ?? 0);
+        $order_code    = sanitize_text_field($_POST['order_code'] ?? '');
+        $channel       = sanitize_text_field($_POST['channel'] ?? 'other');
+        $order_date    = sanitize_text_field($_POST['order_date'] ?? current_time('Y-m-d'));
+        $customer_name = sanitize_text_field($_POST['customer_name'] ?? '');
+        $notes         = sanitize_textarea_field($_POST['notes'] ?? '');
+        $items_raw     = $_POST['items'] ?? [];
+
+        if (! in_array($channel, ['facebook', 'tiktok', 'shopee', 'other'], true)) {
+            $channel = 'other';
+        }
+
+        $orders_table = $wpdb->prefix . 'htw_export_orders';
+
+        if (empty($order_code)) {
+            // Auto-generate order code with retry on collision
+            $attempts = 0;
+            do {
+                $order_code = 'ORD-' . strtoupper(bin2hex(random_bytes(3)));
+                $exists = $wpdb->get_var($wpdb->prepare(
+                    "SELECT id FROM {$orders_table} WHERE order_code = %s",
+                    $order_code
+                ));
+                $attempts++;
+            } while ($exists && $attempts < 5);
+            if ($exists) {
+                wp_send_json_error('Không thể tạo mã đơn không trùng lặp. Vui lòng nhập mã đơn thủ công.');
+            }
+        } else {
+            // Verify user-provided code is not duplicated
+            $exists = $wpdb->get_var($wpdb->prepare(
+                "SELECT id FROM {$orders_table} WHERE order_code = %s AND id != %d",
+                $order_code,
+                $id > 0 ? $id : 0
+            ));
+            if ($exists) {
+                wp_send_json_error('Mã đơn "' . $order_code . '" đã tồn tại. Vui lòng dùng mã khác.');
+            }
+        }
+
+        // Parse items
+        $items = [];
+        foreach ($items_raw as $row) {
+            $pid = absint($row['product_id'] ?? 0);
+            $qty = (float) ($row['qty'] ?? 0);
+            $sp  = (float) ($row['sale_price'] ?? 0);
+            if ($pid && $qty > 0) {
+                $items[] = ['product_id' => $pid, 'qty' => $qty, 'sale_price' => $sp];
+            }
+        }
+
+        if (empty($items)) {
+            wp_send_json_error('Đơn hàng phải có ít nhất 1 sản phẩm.');
+        }
+
+        $items_table  = $wpdb->prefix . 'htw_export_items';
+
+        $order_data = [
+            'order_code'    => $order_code,
+            'channel'       => $channel,
+            'order_date'    => $order_date,
+            'customer_name' => $customer_name,
+            'notes'         => $notes,
+            'status'        => 'draft',
+        ];
+
+        if ($id > 0) {
+            $status = $wpdb->get_var($wpdb->prepare("SELECT status FROM {$orders_table} WHERE id = %d", $id));
+            if ('confirmed' === $status) {
+                wp_send_json_error('Không thể sửa đơn hàng đã xác nhận.');
+            }
+            $wpdb->update($orders_table, $order_data, ['id' => $id]);
+            $wpdb->delete($items_table, ['order_id' => $id]);
+        } else {
+            $wpdb->insert($orders_table, $order_data);
+            $id = $wpdb->insert_id;
+        }
+
+        // Grab current avg_cost for each product (preview only — not committed yet)
+        $total_revenue = 0;
+        $total_cogs    = 0;
+        foreach ($items as $item) {
+            $avg_cost  = (float) $wpdb->get_var($wpdb->prepare(
+                "SELECT avg_cost FROM {$wpdb->prefix}htw_products WHERE id = %d",
+                $item['product_id']
+            ));
+            $revenue   = $item['qty'] * $item['sale_price'];
+            $cogs      = $item['qty'] * $avg_cost;
+            $profit    = $revenue - $cogs;
+            $total_revenue += $revenue;
+            $total_cogs    += $cogs;
+
+            $wpdb->insert($items_table, [
+                'order_id'      => $id,
+                'product_id'    => $item['product_id'],
+                'qty'           => $item['qty'],
+                'sale_price'    => $item['sale_price'],
+                'cogs_per_unit' => $avg_cost,
+                'revenue'       => $revenue,
+                'cogs'          => $cogs,
+                'profit'        => $profit,
+            ]);
+        }
+
+        // Update order totals
+        $wpdb->update($orders_table, [
+            'total_revenue' => $total_revenue,
+            'total_cogs'    => $total_cogs,
+            'total_profit'  => $total_revenue - $total_cogs,
+        ], ['id' => $id]);
+
+        wp_send_json_success(['id' => $id, 'order_code' => $order_code, 'message' => 'Đã lưu đơn hàng.']);
+    }
+
+    // ── AJAX: Confirm order → deduct stock ────────────────────────────────────
+    public static function ajax_confirm(): void
+    {
+        check_ajax_referer('htw_nonce', 'nonce');
+        if (! current_user_can('manage_options')) wp_send_json_error('Unauthorized', 403);
+
+        global $wpdb;
+        $id           = absint($_POST['id'] ?? 0);
+        $orders_table = $wpdb->prefix . 'htw_export_orders';
+        $items_table  = $wpdb->prefix . 'htw_export_items';
+
+        $order = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$orders_table} WHERE id = %d", $id));
+        if (! $order) wp_send_json_error('Đơn hàng không tồn tại.');
+        if ('confirmed' === $order->status) wp_send_json_error('Đơn hàng đã xác nhận rồi.');
+
+        $items = $wpdb->get_results($wpdb->prepare(
+            "SELECT ei.*, p.name AS product_name, p.current_stock
+             FROM {$items_table} ei
+             JOIN {$wpdb->prefix}htw_products p ON p.id = ei.product_id
+             WHERE ei.order_id = %d",
+            $id
+        ), ARRAY_A);
+
+        // Early exit if no items
+        if (empty($items)) wp_send_json_error('Đơn hàng không có sản phẩm.');
+
+        // Pre-read all stock levels once — prevents race condition on concurrent confirm
+        $stock_check = [];
+        foreach ($items as $item) {
+            $pid   = (int) $item['product_id'];
+            $stock = (float) $wpdb->get_var($wpdb->prepare(
+                "SELECT current_stock FROM {$wpdb->prefix}htw_products WHERE id = %d FOR UPDATE",
+                $pid
+            ));
+            $stock_check[$pid] = $stock;
+
+            if ($stock_check[$pid] < (float) $item['qty']) {
+                $prod_name = $item['product_name'];
+                wp_send_json_error("Không đủ hàng trong kho: {$prod_name} (tồn: {$stock_check[$pid]}, cần: {$item['qty']})");
+            }
+        }
+
+        // Begin transaction — ensures atomic multi-table update
+        $wpdb->query('START TRANSACTION');
+
+        try {
+            $total_revenue = 0;
+            $total_cogs    = 0;
+
+            foreach ($items as $item) {
+                $cogs_per_unit = CostCalculator::deduct_stock((int) $item['product_id'], (float) $item['qty']);
+                $revenue       = (float) $item['qty'] * (float) $item['sale_price'];
+                $cogs          = (float) $item['qty'] * $cogs_per_unit;
+                $profit        = $revenue - $cogs;
+
+                $updated = $wpdb->update($items_table, [
+                    'cogs_per_unit' => $cogs_per_unit,
+                    'cogs'          => $cogs,
+                    'profit'        => $profit,
+                ], ['id' => $item['id']]);
+
+                if ($updated === false) {
+                    throw new \Exception('Không thể cập nhật item: ' . $item['id']);
+                }
+
+                $total_revenue += $revenue;
+                $total_cogs    += $cogs;
+            }
+
+            $updated = $wpdb->update($orders_table, [
+                'status'        => 'confirmed',
+                'total_revenue' => $total_revenue,
+                'total_cogs'    => $total_cogs,
+                'total_profit'  => $total_revenue - $total_cogs,
+            ], ['id' => $id]);
+
+            if ($updated === false) {
+                throw new \Exception('Không thể cập nhật đơn hàng: ' . $id);
+            }
+
+            $wpdb->query('COMMIT');
+            wp_send_json_success('Đơn hàng đã xác nhận. Kho hàng đã được trừ.');
+
+        } catch (\Throwable $e) {
+            $wpdb->query('ROLLBACK');
+            wp_send_json_error('Xác nhận thất bại. Vui lòng thử lại. Chi tiết: ' . $e->getMessage());
+        }
+    }
+
+    // ── AJAX: Delete draft order ──────────────────────────────────────────────
+    public static function ajax_delete(): void
+    {
+        check_ajax_referer('htw_nonce', 'nonce');
+        if (! current_user_can('manage_options')) wp_send_json_error('Unauthorized', 403);
+
+        global $wpdb;
+        $id     = absint($_POST['id'] ?? 0);
+        $status = $wpdb->get_var($wpdb->prepare("SELECT status FROM {$wpdb->prefix}htw_export_orders WHERE id = %d", $id));
+
+        if ('confirmed' === $status) {
+            wp_send_json_error('Không thể xoá đơn hàng đã xác nhận.');
+        }
+
+        $wpdb->delete($wpdb->prefix . 'htw_export_items',  ['order_id' => $id], ['%d']);
+        $wpdb->delete($wpdb->prefix . 'htw_export_orders', ['id' => $id],        ['%d']);
+
+        wp_send_json_success('Đã xoá đơn hàng.');
+    }
+}
