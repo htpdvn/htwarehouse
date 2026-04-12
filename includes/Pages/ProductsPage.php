@@ -26,13 +26,14 @@ class ProductsPage
         global $wpdb;
         $table = $wpdb->prefix . 'htw_products';
 
-        $id       = absint($_POST['id'] ?? 0);
-        $sku      = sanitize_text_field($_POST['sku'] ?? '');
-        $name     = sanitize_text_field($_POST['name'] ?? '');
-        $category = sanitize_text_field($_POST['category'] ?? '');
-        $unit     = sanitize_text_field($_POST['unit'] ?? 'cái');
-        $barcode  = sanitize_text_field($_POST['barcode'] ?? '');
-        $notes    = sanitize_textarea_field($_POST['notes'] ?? '');
+        $id          = absint($_POST['id'] ?? 0);
+        $sku         = sanitize_text_field($_POST['sku'] ?? '');
+        $name        = sanitize_text_field($_POST['name'] ?? '');
+        $category    = sanitize_text_field($_POST['category'] ?? '');
+        $unit        = sanitize_text_field($_POST['unit'] ?? 'cái');
+        $barcode     = sanitize_text_field($_POST['barcode'] ?? '');
+        $notes       = sanitize_textarea_field($_POST['notes'] ?? '');
+        $product_url = esc_url_raw($_POST['product_url'] ?? '');
 
         // Image: prefer uploaded attachment ID, fall back to URL
         $image_url = '';
@@ -48,8 +49,8 @@ class ProductsPage
             wp_send_json_error('Tên sản phẩm không được để trống.');
         }
 
-        $data = compact('sku', 'name', 'category', 'unit', 'barcode', 'image_url', 'notes');
-        $fmt  = ['%s', '%s', '%s', '%s', '%s', '%s', '%s'];
+        $data = compact('sku', 'name', 'category', 'unit', 'barcode', 'image_url', 'notes', 'product_url');
+        $fmt  = ['%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s'];
 
         if ($id > 0) {
             // Check SKU uniqueness — exclude current product from check
@@ -107,5 +108,22 @@ class ProductsPage
 
         $wpdb->delete($wpdb->prefix . 'htw_products', ['id' => $id], ['%d']);
         wp_send_json_success('Đã xoá sản phẩm.');
+    }
+
+    // ── AJAX: Get distinct categories ─────────────────────────────────────────
+    public static function ajax_get_categories(): void
+    {
+        check_ajax_referer('htw_nonce', 'nonce');
+        if (! current_user_can('manage_options')) {
+            wp_send_json_error('Unauthorized', 403);
+        }
+
+        global $wpdb;
+        $cats = $wpdb->get_col(
+            "SELECT DISTINCT category FROM {$wpdb->prefix}htw_products
+             WHERE category IS NOT NULL AND category != ''
+             ORDER BY category ASC"
+        );
+        wp_send_json_success($cats);
     }
 }

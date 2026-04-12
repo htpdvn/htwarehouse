@@ -3,7 +3,9 @@ defined('ABSPATH') || exit;
 global $wpdb;
 $products = $wpdb->get_results("SELECT * FROM {$wpdb->prefix}htw_products ORDER BY name", ARRAY_A);
 ?>
-<script>window._htwProducts = <?php echo wp_json_encode($products); ?>;</script>
+<script>
+    window._htwProducts = <?php echo wp_json_encode($products); ?>;
+</script>
 <div class="htw-wrap" x-data="htwProducts">
 
     <div class="htw-page-header">
@@ -27,9 +29,9 @@ $products = $wpdb->get_results("SELECT * FROM {$wpdb->prefix}htw_products ORDER 
                     <th>Tên sản phẩm</th>
                     <th>Danh mục</th>
                     <th>ĐVT</th>
-                    <th>Tồn kho</th>
-                    <th>Giá vốn TB</th>
-                    <th>Giá trị kho</th>
+                    <th>SL Tồn kho</th>
+                    <th>Giá vốn 1 SP</th>
+                    <th>Giá trị tồn kho</th>
                     <th></th>
                 </tr>
             </thead>
@@ -47,16 +49,19 @@ $products = $wpdb->get_results("SELECT * FROM {$wpdb->prefix}htw_products ORDER 
                             </template>
                         </td>
                         <td x-text="p.sku || '—'"></td>
-                        <td style="font-weight:600;" x-text="p.name"></td>
+                        <td style="font-weight:600;">
+                            <a x-show="p.product_url" :href="p.product_url" target="_blank" rel="noopener" x-text="p.name" style="text-decoration:none;color:inherit;"></a>
+                            <span x-show="!p.product_url" x-text="p.name"></span>
+                        </td>
                         <td x-text="p.category || '—'"></td>
                         <td x-text="p.unit"></td>
-                        <td x-text="fmtNum(p.current_stock, 1)"></td>
+                        <td x-text="fmtNum(p.current_stock, 0)"></td>
                         <td x-text="fmt(p.avg_cost)"></td>
                         <td style="color:var(--htw-info);" x-text="fmt(parseFloat(p.current_stock) * parseFloat(p.avg_cost))"></td>
                         <td>
                             <div style="display:flex;gap:6px;">
-                                <button class="htw-btn htw-btn-ghost htw-btn-sm" @click="openEdit(p)">✏️ Sửa</button>
-                                <button class="htw-btn htw-btn-danger htw-btn-sm" @click="del(p.id, p.name)">🗑</button>
+                                <button class="htw-btn htw-btn-ghost htw-btn-sm" @click="openEdit(p)">Sửa</button>
+                                <button class="htw-btn htw-btn-danger htw-btn-sm" @click="del(p.id, p.name)">Xoá</button>
                             </div>
                         </td>
                     </tr>
@@ -89,9 +94,31 @@ $products = $wpdb->get_results("SELECT * FROM {$wpdb->prefix}htw_products ORDER 
                     <label class="htw-label">SKU</label>
                     <input class="htw-input" x-model="form.sku" placeholder="Ví dụ: TOY-001">
                 </div>
-                <div class="htw-field">
+                <div class="htw-field" style="position:relative;">
                     <label class="htw-label">Danh mục</label>
-                    <input class="htw-input" x-model="form.category" placeholder="Ví dụ: Đồ chơi trẻ em">
+                    <input class="htw-input" autocomplete="off"
+                        x-model="form.category"
+                        @input="onCatInput()"
+                        @focus="onCatInput()"
+                        @blur="hideCatList()"
+                        placeholder="Chọn hoặc nhập danh mục mới…">
+                    <!-- Dropdown suggestions -->
+                    <div x-show="catShow && catSuggestions().length"
+                        x-cloak
+                        style="position:absolute;top:100%;left:0;right:0;z-index:9999;
+                                background:var(--htw-surface-2);border:1px solid var(--htw-border);
+                                border-radius:8px;margin-top:4px;max-height:200px;overflow-y:auto;
+                                box-shadow:0 8px 24px rgba(0,0,0,.18);">
+                        <template x-for="cat in catSuggestions()" :key="cat">
+                            <div @mousedown.prevent="selectCat(cat)"
+                                style="padding:9px 14px;cursor:pointer;font-size:.88rem;
+                                        border-bottom:1px solid var(--htw-border);transition:background .15s;"
+                                @mouseover="$el.style.background='var(--htw-surface-3)'"
+                                @mouseout="$el.style.background=''"
+                                x-text="cat">
+                            </div>
+                        </template>
+                    </div>
                 </div>
                 <div class="htw-field">
                     <label class="htw-label">Đơn vị</label>
@@ -100,6 +127,10 @@ $products = $wpdb->get_results("SELECT * FROM {$wpdb->prefix}htw_products ORDER 
                 <div class="htw-field">
                     <label class="htw-label">Barcode</label>
                     <input class="htw-input" x-model="form.barcode" placeholder="Mã vạch">
+                </div>
+                <div class="htw-field">
+                    <label class="htw-label">Link sản phẩm</label>
+                    <input class="htw-input" x-model="form.product_url" placeholder="https://…" type="url">
                 </div>
             </div>
 

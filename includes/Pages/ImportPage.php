@@ -12,6 +12,13 @@ class ImportPage
     public static function render(): void
     {
         if (! current_user_can('manage_options')) wp_die('Unauthorized');
+
+        global $wpdb;
+        $suppliers = $wpdb->get_results(
+            "SELECT id, name, phone, email FROM {$wpdb->prefix}htw_suppliers ORDER BY name ASC",
+            ARRAY_A
+        );
+
         include HTW_PLUGIN_DIR . 'templates/imports/list.php';
     }
 
@@ -27,9 +34,12 @@ class ImportPage
         $batch_code   = sanitize_text_field($_POST['batch_code'] ?? '');
         $supplier     = sanitize_text_field($_POST['supplier'] ?? '');
         $import_date  = sanitize_text_field($_POST['import_date'] ?? current_time('Y-m-d'));
-        $shipping_fee = (float) ($_POST['shipping_fee'] ?? 0);
-        $tax_fee      = (float) ($_POST['tax_fee'] ?? 0);
-        $other_fee    = (float) ($_POST['other_fee'] ?? 0);
+        $shipping_fee    = (float) ($_POST['shipping_fee'] ?? 0);
+        $tax_fee         = (float) ($_POST['tax_fee'] ?? 0);
+        $service_fee     = (float) ($_POST['service_fee'] ?? 0);
+        $inspection_fee  = (float) ($_POST['inspection_fee'] ?? 0);
+        $packing_fee     = (float) ($_POST['packing_fee'] ?? 0);
+        $other_fee       = (float) ($_POST['other_fee'] ?? 0);
         $notes        = sanitize_textarea_field($_POST['notes'] ?? '');
         $items_raw    = $_POST['items'] ?? [];
 
@@ -80,21 +90,24 @@ class ImportPage
         $items_table = $wpdb->prefix . 'htw_import_items';
 
         $batch_data = [
-            'batch_code'   => $batch_code,
-            'supplier'     => $supplier,
-            'import_date'  => $import_date,
-            'shipping_fee' => $shipping_fee,
-            'tax_fee'      => $tax_fee,
-            'other_fee'    => $other_fee,
-            'notes'        => $notes,
-            'status'       => 'draft',
+            'batch_code'     => $batch_code,
+            'supplier'       => $supplier,
+            'import_date'    => $import_date,
+            'shipping_fee'   => $shipping_fee,
+            'tax_fee'        => $tax_fee,
+            'service_fee'    => $service_fee,
+            'inspection_fee' => $inspection_fee,
+            'packing_fee'    => $packing_fee,
+            'other_fee'      => $other_fee,
+            'notes'          => $notes,
+            'status'         => 'draft',
         ];
 
         if ($id > 0) {
             // Only allow editing drafts
             $status = $wpdb->get_var($wpdb->prepare("SELECT status FROM {$batch_table} WHERE id = %d", $id));
             if ('confirmed' === $status) {
-                wp_send_json_error('Không thể sửa lô hàng đã xác nhận.');
+                wp_send_json_error('Không thể sửa lô hàng đã xác nhận lưu kho.');
             }
             $wpdb->update($batch_table, $batch_data, ['id' => $id]);
             $wpdb->delete($items_table, ['batch_id' => $id]);
@@ -148,23 +161,31 @@ class ImportPage
             wp_send_json_error('Lô hàng không có sản phẩm.');
         }
 
-        $extra_cost = (float) $batch->shipping_fee + (float) $batch->tax_fee + (float) $batch->other_fee;
+        $extra_cost = (float) $batch->shipping_fee
+            + (float) $batch->tax_fee
+            + (float) $batch->service_fee
+            + (float) $batch->inspection_fee
+            + (float) $batch->packing_fee
+            + (float) $batch->other_fee;
 
-        // Lock all affected product rows to prevent race conditions with concurrent confirms
-        foreach ($items as $item) {
-            $wpdb->get_var($wpdb->prepare(
-                "SELECT id FROM {$wpdb->prefix}htw_products WHERE id = %d FOR UPDATE",
-                (int) $item['product_id']
-            ));
-        }
-
-        // Allocate extra costs
+        // Allocate extra costs BEFORE starting transaction so that the PHP array
+        // is ready before any DB write happens.
         $items = CostCalculator::allocate_extra_costs($items, $extra_cost);
 
-        // Begin transaction — ensures atomic multi-table update
+        // Begin transaction FIRST — all subsequent FOR UPDATE locks are then covered by it.
+        // This ordering eliminates the race window that existed between the old lock
+        // loop and the START TRANSACTION call.
         $wpdb->query('START TRANSACTION');
 
         try {
+            // Acquire row-level locks for all affected product rows.
+            foreach ($items as $item) {
+                $wpdb->get_var($wpdb->prepare(
+                    "SELECT id FROM {$wpdb->prefix}htw_products WHERE id = %d FOR UPDATE",
+                    (int) $item['product_id']
+                ));
+            }
+
             // Update WAC and stock for each product
             foreach ($items as $item) {
                 // Update the item with allocated cost
@@ -193,7 +214,6 @@ class ImportPage
 
             $wpdb->query('COMMIT');
             wp_send_json_success('Lô hàng đã được xác nhận. Kho hàng đã được cập nhật.');
-
         } catch (\Throwable $e) {
             $wpdb->query('ROLLBACK');
             wp_send_json_error('Xác nhận thất bại. Vui lòng thử lại. Chi tiết: ' . $e->getMessage());
@@ -211,7 +231,7 @@ class ImportPage
         $status = $wpdb->get_var($wpdb->prepare("SELECT status FROM {$wpdb->prefix}htw_import_batches WHERE id = %d", $id));
 
         if ('confirmed' === $status) {
-            wp_send_json_error('Không thể xoá lô hàng đã xác nhận.');
+            wp_send_json_error('Không thể xoá lô hàng đã xác nhận lưu kho.');
         }
 
         $wpdb->delete($wpdb->prefix . 'htw_import_items',   ['batch_id' => $id], ['%d']);

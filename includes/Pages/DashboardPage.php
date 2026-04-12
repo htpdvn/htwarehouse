@@ -10,6 +10,17 @@ class DashboardPage
     public static function render(): void
     {
         if (! current_user_can('manage_options')) wp_die('Unauthorized');
+
+        global $wpdb;
+        $low_stock = $wpdb->get_results(
+            "SELECT sku, name, current_stock, unit
+             FROM {$wpdb->prefix}htw_products
+             WHERE current_stock <= 5
+             ORDER BY current_stock ASC
+             LIMIT 10",
+            ARRAY_A
+        );
+
         include HTW_PLUGIN_DIR . 'templates/dashboard.php';
     }
 
@@ -71,27 +82,27 @@ class DashboardPage
             $today
         ), ARRAY_A);
 
-        // Low stock alert: products where current_stock <= 5
-        $low_stock = $wpdb->get_results(
-            "SELECT sku, name, current_stock, unit
-             FROM {$wpdb->prefix}htw_products
-             WHERE current_stock <= 5
-             ORDER BY current_stock ASC
-             LIMIT 10",
-            ARRAY_A
+        // KPI: Purchase orders
+        $po_kpi = $wpdb->get_row(
+            "SELECT COUNT(*) AS active_pos,
+                    COALESCE(SUM(amount_remaining), 0) AS total_debt,
+                    SUM(CASE WHEN status = 'draft' THEN 1 ELSE 0 END) AS draft_pos
+             FROM {$wpdb->prefix}htw_purchase_orders
+             WHERE status IN ('draft', 'confirmed', 'received')"
         );
 
         wp_send_json_success([
-            'kpi'       => [
+            'kpi'   => [
                 'total_products'  => (int)   $stock_kpi->total_products,
                 'inventory_value' => (float) $stock_kpi->inventory_value,
                 'revenue'         => (float) $month_kpi->revenue,
                 'profit'          => (float) $month_kpi->profit,
                 'total_orders'    => (int)   $month_kpi->total_orders,
+                'po_active'       => (int)   $po_kpi->active_pos,
+                'po_debt'         => (float) $po_kpi->total_debt,
             ],
-            'chart'     => $chart,
-            'top5'      => $top5,
-            'low_stock' => $low_stock,
+            'chart' => $chart,
+            'top5'  => $top5,
         ]);
     }
 }

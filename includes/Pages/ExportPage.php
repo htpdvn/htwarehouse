@@ -163,26 +163,27 @@ class ExportPage
         // Early exit if no items
         if (empty($items)) wp_send_json_error('Đơn hàng không có sản phẩm.');
 
-        // Pre-read all stock levels once — prevents race condition on concurrent confirm
-        $stock_check = [];
-        foreach ($items as $item) {
-            $pid   = (int) $item['product_id'];
-            $stock = (float) $wpdb->get_var($wpdb->prepare(
-                "SELECT current_stock FROM {$wpdb->prefix}htw_products WHERE id = %d FOR UPDATE",
-                $pid
-            ));
-            $stock_check[$pid] = $stock;
-
-            if ($stock_check[$pid] < (float) $item['qty']) {
-                $prod_name = $item['product_name'];
-                wp_send_json_error("Không đủ hàng trong kho: {$prod_name} (tồn: {$stock_check[$pid]}, cần: {$item['qty']})");
-            }
-        }
-
-        // Begin transaction — ensures atomic multi-table update
+        // Begin transaction — wraps all DB writes for atomicity
         $wpdb->query('START TRANSACTION');
 
         try {
+            // Acquire row-level locks for all affected products BEFORE reading stock
+            // This prevents race condition where two concurrent confirms both see
+            // the same stock and both proceed to oversell.
+            $stock_check = [];
+            foreach ($items as $item) {
+                $pid   = (int) $item['product_id'];
+                $stock = (float) $wpdb->get_var($wpdb->prepare(
+                    "SELECT current_stock FROM {$wpdb->prefix}htw_products WHERE id = %d FOR UPDATE",
+                    $pid
+                ));
+                $stock_check[$pid] = $stock;
+
+                if ($stock_check[$pid] < (float) $item['qty']) {
+                    throw new \Exception("Không đủ hàng trong kho: {$item['product_name']} (tồn: {$stock_check[$pid]}, cần: {$item['qty']})");
+                }
+            }
+
             $total_revenue = 0;
             $total_cogs    = 0;
 

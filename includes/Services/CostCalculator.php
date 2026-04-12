@@ -48,7 +48,7 @@ class CostCalculator
                 'avg_cost'      => round($new_avg, 4),
             ],
             ['id' => $product_id],
-            ['%f', '%f'],
+            ['%s', '%s'],
             ['%d']
         );
     }
@@ -79,7 +79,7 @@ class CostCalculator
             $table,
             ['current_stock' => $new_stock],
             ['id' => $product_id],
-            ['%f'],
+            ['%s'],
             ['%d']
         );
 

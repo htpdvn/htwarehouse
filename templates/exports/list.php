@@ -70,7 +70,7 @@ window._htwProducts = <?php echo wp_json_encode($products); ?>;
                     <tr>
                         <td style="font-weight:600;color:var(--htw-primary);" x-text="o.order_code"></td>
                         <td><span :class="'htw-badge htw-badge-' + o.channel" x-text="channelLabel(o.channel)"></span></td>
-                        <td x-text="o.order_date"></td>
+                        <td x-text="fmtDate(o.order_date)"></td>
                         <td x-text="o.customer_name || '—'"></td>
                         <td x-text="o.item_count"></td>
                         <td x-text="fmt(o.total_revenue)"></td>
@@ -80,13 +80,13 @@ window._htwProducts = <?php echo wp_json_encode($products); ?>;
                         <td>
                             <div style="display:flex;gap:5px;">
                                 <template x-if="o.status === 'draft'">
-                                    <button class="htw-btn htw-btn-ghost htw-btn-sm" @click="openEdit(o)">✏️</button>
+                                    <button class="htw-btn htw-btn-ghost htw-btn-sm" @click="openEdit(o)">Sửa</button>
                                 </template>
                                 <template x-if="o.status === 'draft'">
-                                    <button class="htw-btn htw-btn-success htw-btn-sm" @click="confirm(o.id)">✓ XN</button>
+                                    <button class="htw-btn htw-btn-success htw-btn-sm" @click="confirm(o.id)">✓ Xác nhận</button>
                                 </template>
                                 <template x-if="o.status === 'draft'">
-                                    <button class="htw-btn htw-btn-danger htw-btn-sm" @click="del(o.id)">🗑</button>
+                                    <button class="htw-btn htw-btn-danger htw-btn-sm" @click="del(o.id)">Xoá</button>
                                 </template>
                                 <template x-if="o.status === 'confirmed'">
                                     <span style="color:var(--htw-text-muted);font-size:.8rem;">— khoá —</span>
@@ -155,15 +155,19 @@ window._htwProducts = <?php echo wp_json_encode($products); ?>;
                         <template x-for="(item, idx) in form.items" :key="idx">
                             <tr>
                                 <td>
-                                    <select class="htw-select" x-model="item.product_id" @change="onProductChange(item)">
-                                        <option value="">-- Chọn sản phẩm --</option>
-                                        <template x-for="p in products" :key="p.id">
-                                            <option :value="p.id" x-text="p.name + (p.sku ? ' [' + p.sku + ']' : '')"></option>
-                                        </template>
+                                    <select class="htw-select" x-model="item.product_id" @change="onProductChange(item)" x-html="'<option value=\'\'>-- Chọn sản phẩm --</option>' + products.map(function(p){return '<option value=\''+p.id+'\''+(item.product_id==p.id?' selected':'')+'>'+p.name+(p.sku?' ['+p.sku+']':'')+'</option>';}).join('')">
                                     </select>
                                 </td>
-                                <td><input class="htw-input" type="number" x-model="item.qty" min="0.001" step="0.001"></td>
-                                <td><input class="htw-input" type="number" x-model="item.sale_price" min="0" step="1"></td>
+                                <td><input class="htw-input" type="text"
+                                           :value="fmtNum(item.qty)"
+                                           @input="item.qty = parseNum($event.target.value)"
+                                           @blur="$event.target.value = fmtNum(item.qty)"
+                                           placeholder="0" style="text-align:right;"></td>
+                                <td><input class="htw-input" type="text"
+                                           :value="fmtNum(item.sale_price)"
+                                           @input="item.sale_price = parseNum($event.target.value)"
+                                           @blur="$event.target.value = fmtNum(item.sale_price)"
+                                           placeholder="0" style="text-align:right;"></td>
                                 <td style="color:var(--htw-text-muted);font-size:.8rem;" x-text="fmt(item.avg_cost)"></td>
                                 <td x-text="fmt(item.qty * item.sale_price)"></td>
                                 <td :style="{color: (item.qty*(item.sale_price-item.avg_cost))>=0 ? '#22c55e':'#ef4444'}"

@@ -63,50 +63,74 @@ class ReportsPage
         if (empty($from)) $from = date('Y-m-01');
         if (empty($to))   $to   = date('Y-m-d');
 
-        // Opening stock = current_stock + qty_sold_in_period - qty_imported_in_period
-        $products = $wpdb->get_results(
-            "SELECT id, sku, name, unit, current_stock, avg_cost FROM {$wpdb->prefix}htw_products ORDER BY name",
+        // Load all confirmed batches/orders in a single query per type to minimise DB round-trips
+        $confirmed_imports = $wpdb->get_results(
+            "SELECT ib.import_date, ii.product_id, ii.qty
+             FROM {$wpdb->prefix}htw_import_batches ib
+             JOIN {$wpdb->prefix}htw_import_items ii ON ii.batch_id = ib.id
+             WHERE ib.status = 'confirmed'",
             ARRAY_A
         );
+
+        $confirmed_exports = $wpdb->get_results(
+            "SELECT eo.order_date, ei.product_id, ei.qty
+             FROM {$wpdb->prefix}htw_export_orders eo
+             JOIN {$wpdb->prefix}htw_export_items ei ON ei.order_id = eo.id
+             WHERE eo.status = 'confirmed'",
+            ARRAY_A
+        );
+
+        $products = $wpdb->get_results(
+            "SELECT id, sku, name, unit, current_stock, avg_cost
+             FROM {$wpdb->prefix}htw_products ORDER BY name",
+            ARRAY_A
+        );
+
+        // Index imports/exports by product_id for O(1) lookup
+        $imports_before = [];
+        $imports_in_period = [];
+        $exports_before = [];
+        $exports_in_period = [];
+
+        foreach ($confirmed_imports as $row) {
+            $pid = (int) $row['product_id'];
+            if ($row['import_date'] < $from) {
+                $imports_before[$pid] = ($imports_before[$pid] ?? 0) + (float) $row['qty'];
+            } else {
+                $imports_in_period[$pid] = ($imports_in_period[$pid] ?? 0) + (float) $row['qty'];
+            }
+        }
+
+        foreach ($confirmed_exports as $row) {
+            $pid = (int) $row['product_id'];
+            if ($row['order_date'] < $from) {
+                $exports_before[$pid] = ($exports_before[$pid] ?? 0) + (float) $row['qty'];
+            } else {
+                $exports_in_period[$pid] = ($exports_in_period[$pid] ?? 0) + (float) $row['qty'];
+            }
+        }
 
         $rows = [];
         foreach ($products as $p) {
             $pid = (int) $p['id'];
 
-            $qty_in = (float) $wpdb->get_var($wpdb->prepare(
-                "SELECT COALESCE(SUM(ii.qty),0)
-                 FROM {$wpdb->prefix}htw_import_items ii
-                 JOIN {$wpdb->prefix}htw_import_batches ib ON ib.id = ii.batch_id
-                 WHERE ii.product_id = %d
-                   AND ib.status = 'confirmed'
-                   AND ib.import_date BETWEEN %s AND %s",
-                $pid,
-                $from,
-                $to
-            ));
-
-            $qty_out = (float) $wpdb->get_var($wpdb->prepare(
-                "SELECT COALESCE(SUM(ei.qty),0)
-                 FROM {$wpdb->prefix}htw_export_items ei
-                 JOIN {$wpdb->prefix}htw_export_orders eo ON eo.id = ei.order_id
-                 WHERE ei.product_id = %d
-                   AND eo.status = 'confirmed'
-                   AND eo.order_date BETWEEN %s AND %s",
-                $pid,
-                $from,
-                $to
-            ));
-
+            $qty_in  = (float) ($imports_in_period[$pid] ?? 0);
+            $qty_out = (float) ($exports_in_period[$pid] ?? 0);
             $closing = (float) $p['current_stock'];
-            // Inventory identity: Opening + qty_in - qty_out = Closing
-            // So: Opening = Closing - qty_in + qty_out
-            $opening = $closing - $qty_in + $qty_out;
+
+            // Inventory identity:
+            //   closing = (imports_before - exports_before) + qty_in - qty_out
+            // So:  opening = closing - qty_in + qty_out - imports_before + exports_before
+            // This gives the exact stock level at the START of the date range.
+            $imports_b = $imports_before[$pid] ?? 0;
+            $exports_b = $exports_before[$pid] ?? 0;
+            $opening   = max(0, $closing - $qty_in + $qty_out - $imports_b + $exports_b);
 
             $rows[] = [
                 'sku'           => $p['sku'],
                 'name'          => $p['name'],
                 'unit'          => $p['unit'],
-                'opening_stock' => max(0, $opening),
+                'opening_stock' => $opening,
                 'qty_in'        => $qty_in,
                 'qty_out'       => $qty_out,
                 'closing_stock' => $closing,
@@ -139,7 +163,7 @@ class ReportsPage
              JOIN {$wpdb->prefix}htw_products p ON p.id = ei.product_id
              WHERE eo.status = 'confirmed'
                AND eo.order_date BETWEEN %s AND %s
-             GROUP BY ei.product_id
+             GROUP BY p.id, p.sku, p.name, p.unit
              ORDER BY total_profit DESC",
             $from,
             $to

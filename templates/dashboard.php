@@ -28,6 +28,16 @@
             <div class="htw-kpi-value" x-text="kpi.profit !== undefined ? fmt(kpi.profit) : '—'"></div>
             <div class="htw-kpi-sub" x-text="kpi.revenue > 0 ? 'Margin: ' + Math.round(kpi.profit/kpi.revenue*100) + '%' : ''"></div>
         </div>
+        <div class="htw-kpi-card yellow">
+            <div class="htw-kpi-label">Đơn đặt hàng đang xử lý</div>
+            <div class="htw-kpi-value" x-text="kpi.po_active ?? '—'"></div>
+            <div class="htw-kpi-sub">Đơn PO đang mở</div>
+        </div>
+        <div class="htw-kpi-card red">
+            <div class="htw-kpi-label">Công nợ NCC</div>
+            <div class="htw-kpi-value" x-text="kpi.po_debt !== undefined ? fmt(kpi.po_debt) : '—'"></div>
+            <div class="htw-kpi-sub">Tổng nợ phải trả</div>
+        </div>
     </div>
 
     <!-- Charts + top5 -->
@@ -53,7 +63,8 @@
     </div>
 
     <!-- Low stock -->
-    <div class="htw-card" style="margin-top:18px;" x-show="low.length">
+    <?php if (!empty($low_stock)) : ?>
+    <div class="htw-card" style="margin-top:18px;">
         <div class="htw-chart-title" style="margin-bottom:12px">⚠️ Hàng sắp hết kho</div>
         <div class="htw-table-wrap">
             <table class="htw-table">
@@ -66,17 +77,18 @@
                     </tr>
                 </thead>
                 <tbody>
-                    <template x-for="p in low" :key="p.sku">
-                        <tr>
-                            <td x-text="p.sku"></td>
-                            <td x-text="p.name"></td>
-                            <td style="color:var(--htw-danger);font-weight:700;" x-text="fmtNum(p.current_stock, 1)"></td>
-                            <td x-text="p.unit"></td>
-                        </tr>
-                    </template>
+                    <?php foreach ($low_stock as $p) : ?>
+                    <tr>
+                        <td><?= esc_html($p['sku']) ?></td>
+                        <td><?= esc_html($p['name']) ?></td>
+                        <td style="color:var(--htw-danger);font-weight:700;"><?= number_format((float)$p['current_stock'], 0) ?></td>
+                        <td><?= esc_html($p['unit']) ?></td>
+                    </tr>
+                    <?php endforeach; ?>
                 </tbody>
             </table>
         </div>
     </div>
+    <?php endif; ?>
 
 </div>
