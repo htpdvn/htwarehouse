@@ -135,7 +135,7 @@ $products = $wpdb->get_results("SELECT * FROM {$wpdb->prefix}htw_products ORDER 
                         <tr>
                             <th style="width:40%;">Sản phẩm</th>
                             <th>Số lượng</th>
-                            <th>Đơn giá (đ)</th>
+                            <th>Đơn giá</th>
                             <th>Thành tiền</th>
                             <th>Giá vốn (ước)</th>
                             <th></th>
@@ -286,9 +286,9 @@ $products = $wpdb->get_results("SELECT * FROM {$wpdb->prefix}htw_products ORDER 
                                 <tr>
                                     <th style="width:35%;">Sản phẩm</th>
                                     <th>Số lượng</th>
-                                    <th>Đơn giá (đ)</th>
+                                    <th>Đơn giá</th>
                                     <th>Thành tiền</th>
-                                    <th>Giá vốn đã phân bổ (đ)</th>
+                                    <th>Giá vốn đã phân bổ</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -296,9 +296,9 @@ $products = $wpdb->get_results("SELECT * FROM {$wpdb->prefix}htw_products ORDER 
                                     <tr>
                                         <td x-text="item.product_name || productName(item.product_id)"></td>
                                         <td style="text-align:right;" x-text="fmtNum(item.qty)"></td>
-                                        <td style="text-align:right;" x-text="fmtNum(item.unit_price)"></td>
+                                        <td style="text-align:right;" x-text="fmt(item.unit_price)"></td>
                                         <td style="text-align:right;" x-text="fmt(item.total_cost)"></td>
-                                        <td style="text-align:right;color:var(--htw-success);" x-text="fmtNum(item.allocated_cost_per_unit)"></td>
+                                        <td style="text-align:right;color:var(--htw-success);" x-text="fmt(item.allocated_cost_per_unit)"></td>
                                     </tr>
                                 </template>
                             </tbody>

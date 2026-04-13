@@ -8,7 +8,7 @@ class Database
 {
 
     const DB_VERSION_OPTION = 'htw_db_version';
-    const DB_VERSION        = '1.1.0';
+    const DB_VERSION        = '1.2.0';
 
     public static function install(): void
     {
@@ -113,10 +113,10 @@ class Database
             product_id    BIGINT UNSIGNED NOT NULL,
             qty           DECIMAL(15,3)   NOT NULL DEFAULT 0,
             sale_price    DECIMAL(15,2)   NOT NULL DEFAULT 0,
-            cogs_per_unit DECIMAL(15,4)   NOT NULL DEFAULT 0,
-            revenue       DECIMAL(15,2)   NOT NULL DEFAULT 0,
-            cogs          DECIMAL(15,2)   NOT NULL DEFAULT 0,
-            profit        DECIMAL(15,2)   NOT NULL DEFAULT 0,
+            cogs_per_unit DECIMAL(15,4)   NULL DEFAULT NULL,
+            revenue       DECIMAL(15,2)   NULL DEFAULT NULL,
+            cogs          DECIMAL(15,2)   NULL DEFAULT NULL,
+            profit        DECIMAL(15,2)   NULL DEFAULT NULL,
             created_at    DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
             KEY order_id (order_id),

@@ -444,17 +444,27 @@
         },
 
         openEdit: function (o) {
+          var allProducts = this.products;
           this.form = {
             id: o.id, order_code: o.order_code, channel: o.channel,
             order_date: o.order_date, customer_name: o.customer_name, notes: o.notes || '',
-            items: (o.items || []).map(function (i) { return { product_id: i.product_id, qty: i.qty != null ? String(i.qty) : '', sale_price: i.sale_price != null ? String(i.sale_price) : '', avg_cost: parseFloat(i.cogs_per_unit||0) }; })
+            items: (o.items || []).map(function (i) {
+              var p = allProducts.find(function (x) { return x.id == i.product_id; });
+              return {
+                product_id: i.product_id,
+                qty: i.qty != null ? String(i.qty) : '',
+                sale_price: i.sale_price != null ? String(i.sale_price) : '',
+                avg_cost: p ? parseFloat(p.avg_cost || 0) : parseFloat(i.cogs_per_unit || 0),
+                current_stock: p ? parseFloat(p.current_stock || 0) : 0
+              };
+            })
           };
           if (!this.form.items.length) this.addItem();
           this.modal = true;
         },
 
         addItem: function () {
-          this.form.items.push({ product_id: '', qty: '', sale_price: '', avg_cost: 0 });
+          this.form.items.push({ product_id: '', qty: '', sale_price: '', avg_cost: 0, current_stock: 0 });
         },
 
         removeItem: function (idx) {
@@ -463,7 +473,13 @@
 
         onProductChange: function (item) {
           var p = this.products.find(function (x) { return x.id == item.product_id; });
-          if (p) item.avg_cost = parseFloat(p.avg_cost || 0);
+          if (p) {
+            item.avg_cost      = parseFloat(p.avg_cost || 0);
+            item.current_stock = parseFloat(p.current_stock || 0);
+          } else {
+            item.avg_cost      = 0;
+            item.current_stock = 0;
+          }
         },
 
         parseNum: function (s) {
@@ -483,6 +499,21 @@
 
         save: function () {
           var self = this;
+          // ── Client-side stock validation ──────────────────────────────────
+          var overStock = [];
+          self.form.items.forEach(function (item) {
+            if (!item.product_id) return;
+            var qty   = self.parseNum(item.qty);
+            var stock = parseFloat(item.current_stock || 0);
+            if (qty > stock) {
+              var p = self.products.find(function (x) { return x.id == item.product_id; });
+              overStock.push((p ? p.name : 'SP #' + item.product_id) + ' (tồn: ' + stock + ', cần: ' + qty + ')');
+            }
+          });
+          if (overStock.length) {
+            alert('Số lượng vượt tồn kho:\n• ' + overStock.join('\n• '));
+            return;
+          }
           self.saving = true;
           var data = {
             id: self.form.id, order_code: self.form.order_code, channel: self.form.channel,
@@ -542,7 +573,14 @@
 
         channelLabel: HTWApp.channelLabel,
         fmt: HTWApp.fmt,
-        fmtNum: HTWApp.fmtNum
+        fmtNum: HTWApp.fmtNum,
+        fmtDate: function (d) {
+          if (!d) return '—';
+          var dateOnly = String(d).split(' ')[0];
+          var parts = dateOnly.split('-');
+          if (parts.length < 3) return d;
+          return parts[2] + '/' + parts[1] + '/' + parts[0];
+        }
       };
     });
 
@@ -584,7 +622,8 @@
 
         channelLabel: HTWApp.channelLabel,
         fmt:    HTWApp.fmt,
-        fmtNum: HTWApp.fmtNum
+        fmtNum: HTWApp.fmtNum,
+        fmtDate: HTWApp.fmtDate
       };
     });
 
@@ -1114,6 +1153,123 @@
         },
 
         fmt: HTWApp.fmt
+      };
+    });
+
+    // ── Snapshot Page ────────────────────────────────────────────────────────────
+    Alpine.data('htwSnapshots', function () {
+      var snapList    = window._htwSnapshots    || [];
+      var snapStatus  = window._htwSnapshotStatus || null;
+      var nextRun     = window._htwNextRun      || null;
+      return {
+        snapshots:     snapList,
+        scheduled:     false,
+        nextRunStr:    nextRun,
+        lastRun:       null,
+        lastStatus:    snapStatus,
+        creating:      false,
+        restoring:     false,
+        restoreModal:  false,
+        restoreTarget: null,
+        toast: { show: false, message: '', type: 'success' },
+
+        init: function () {
+          this.lastRun = (this.lastStatus && this.lastStatus.run_at)
+                        ? this.fmtDate(this.lastStatus.run_at) : null;
+          this.fetchStatus();
+        },
+
+        fetchStatus: function () {
+          var self = this;
+          jQuery.post(HTW.ajaxUrl, { action: 'htw_snapshot_status', nonce: HTW.nonce }, function (res) {
+            if (res.success && res.data) {
+              self.scheduled  = res.data.is_scheduled;
+              self.nextRunStr = res.data.next_run || null;
+              self.lastStatus = res.data.last_status || null;
+              if (self.lastStatus && self.lastStatus.run_at) {
+                self.lastRun = self.fmtDate(self.lastStatus.run_at);
+              }
+            }
+          });
+        },
+
+        showToast: function (message, type) {
+          var self = this;
+          this.toast = { show: true, message: message, type: type || 'success' };
+          setTimeout(function () { self.toast.show = false; }, 5500);
+        },
+
+        createSnapshot: function () {
+          var self = this;
+          this.creating = true;
+          HTWApp.request('htw_snapshot_create', {}, function (res) {
+            self.creating = false;
+            if (res.success) {
+              self.snapshots.unshift({
+                filename:   res.data.filename,
+                url:        res.data.url,
+                created_at: res.data.created_at,
+                size_bytes: res.data.size_bytes,
+                row_counts: res.data.row_counts,
+              });
+              self.showToast('Snapshot tạo thành công! (' + res.data.size_formatted + ')');
+            } else {
+              self.showToast(res.data || 'Tạo snapshot thất bại.', 'error');
+            }
+          });
+        },
+
+        confirmRestore: function (s) {
+          this.restoreTarget = s;
+          this.restoreModal  = true;
+        },
+
+        doRestore: function () {
+          var self = this;
+          this.restoring = true;
+          HTWApp.request('htw_snapshot_restore', { filename: this.restoreTarget.filename }, function (res) {
+            self.restoring    = false;
+            self.restoreModal = false;
+            if (res.success) {
+              self.showToast('Khôi phục thành công!');
+            } else {
+              self.showToast(res.data || 'Khôi phục thất bại.', 'error');
+            }
+          });
+        },
+
+        deleteSnapshot: function (s) {
+          if (!confirm('Xoá snapshot "' + s.filename + '"? Hành động không thể hoàn tác.')) return;
+          var self = this;
+          HTWApp.request('htw_snapshot_delete', { filename: s.filename }, function (res) {
+            if (res.success) {
+              self.snapshots = self.snapshots.filter(function (x) { return x.filename !== s.filename; });
+              self.showToast('Đã xoá snapshot.');
+            } else {
+              self.showToast(res.data || 'Xoá thất bại.', 'error');
+            }
+          });
+        },
+
+        rowCnt: function (s, key) {
+          return (s.row_counts && s.row_counts[key]) ? s.row_counts[key] : '—';
+        },
+
+        fmtDate: function (str) {
+          if (!str) return '—';
+          var d = new Date(String(str).replace(' ', 'T'));
+          if (isNaN(d.getTime())) return str;
+          var pad = function (n) { return ('0' + n).slice(-2); };
+          return pad(d.getDate()) + '/' + pad(d.getMonth() + 1) + '/' + d.getFullYear()
+               + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+        },
+
+        fmtSize: function (bytes) {
+          if (!bytes) return '—';
+          if (bytes < 1024) return bytes + ' B';
+          if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+          return (bytes / (1024 * 1024)). toFixed(1) + ' MB';
+        }
       };
     });
   }

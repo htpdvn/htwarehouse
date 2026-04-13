@@ -78,6 +78,7 @@ class CostCalculator
     /**
      * Distribute batch extra costs (shipping, tax, other) across items
      * proportionally by item value (qty * unit_price).
+     * Uses bcmath via NumberHelper for precision on all financial calculations.
      *
      * @param array $items  Each: [ product_id, qty, unit_price ]
      * @param float $extra_cost  Total extra cost to distribute.
@@ -85,20 +86,29 @@ class CostCalculator
      */
     public static function allocate_extra_costs(array $items, float $extra_cost): array
     {
-        $total_value = array_sum(
-            array_map(fn($i) => $i['qty'] * $i['unit_price'], $items)
-        );
+        // Compute total value using NumberHelper for precision
+        $total_value = '0';
+        foreach ($items as $item) {
+            $item_value = NumberHelper::mul((string) $item['qty'], (string) $item['unit_price']);
+            $total_value = NumberHelper::add($total_value, $item_value);
+        }
+
+        $extra_str = (string) $extra_cost;
 
         foreach ($items as &$item) {
-            $item_value  = $item['qty'] * $item['unit_price'];
-            $share       = $total_value > 0 ? $item_value / $total_value : 0;
-            $allocated   = $extra_cost * $share;
+            $qty        = (string) $item['qty'];
+            $unit_price = (string) $item['unit_price'];
+            $item_value = NumberHelper::mul($qty, $unit_price);
+            $share      = NumberHelper::comp($total_value, '0', 4) > 0
+                ? NumberHelper::div($item_value, $total_value, 6)
+                : '0';
+            $allocated  = NumberHelper::mul($extra_str, $share);
 
-            $item['allocated_cost_per_unit'] = $item['qty'] > 0
-                ? ($item['unit_price'] + ($allocated / $item['qty']))
-                : $item['unit_price'];
+            $item['allocated_cost_per_unit'] = NumberHelper::comp($qty, '0', 4) > 0
+                ? NumberHelper::add($unit_price, NumberHelper::div($allocated, $qty, 4))
+                : $unit_price;
 
-            $item['total_cost'] = $item['qty'] * $item['allocated_cost_per_unit'];
+            $item['total_cost'] = NumberHelper::mul($qty, (string) $item['allocated_cost_per_unit']);
         }
 
         return $items;

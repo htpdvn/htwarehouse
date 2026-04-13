@@ -2,6 +2,9 @@
 
 namespace HTWarehouse;
 
+use HTWarehouse\Pages\SnapshotPage;
+use HTWarehouse\Snapshot\SnapshotScheduler;
+
 defined('ABSPATH') || exit;
 
 class Admin
@@ -46,6 +49,15 @@ class Admin
         add_action('wp_ajax_htw_save_supplier',            [Pages\SuppliersPage::class, 'ajax_save']);
         add_action('wp_ajax_htw_delete_supplier',          [Pages\SuppliersPage::class, 'ajax_delete']);
         add_action('wp_ajax_htw_supplier_transactions',    [Pages\SuppliersPage::class, 'ajax_transactions']);
+
+        // Snapshot AJAX
+        add_action('wp_ajax_htw_snapshot_create',   [SnapshotPage::class, 'ajax_create']);
+        add_action('wp_ajax_htw_snapshot_restore',   [SnapshotPage::class, 'ajax_restore']);
+        add_action('wp_ajax_htw_snapshot_delete',    [SnapshotPage::class, 'ajax_delete']);
+        add_action('wp_ajax_htw_snapshot_status',   [SnapshotPage::class, 'ajax_get_status']);
+
+        // Ensure daily snapshot cron is scheduled when admin loads
+        SnapshotScheduler::get_instance()->register_hooks();
     }
 
     /**
@@ -93,8 +105,9 @@ class Admin
         add_submenu_page('htwarehouse', 'Nhà cung cấp',   'Nhà cung cấp',    'manage_options', 'htw-suppliers',         [Pages\SuppliersPage::class, 'render']);
         add_submenu_page('htwarehouse', 'Nhập kho',       'Nhập kho',        'manage_options', 'htw-imports',           [Pages\ImportPage::class,    'render']);
         add_submenu_page('htwarehouse', 'Xuất kho / Bán', 'Xuất kho / Bán',  'manage_options', 'htw-exports',           [Pages\ExportPage::class,    'render']);
-        add_submenu_page('htwarehouse', 'Đơn đặt hàng',   'Đơn đặt hàng',    'manage_options', 'htw-purchase-orders',   [Pages\PurchaseOrderPage::class, 'render']);
+        add_submenu_page('htwarehouse', 'Đặt hàng',       'Đặt hàng',        'manage_options', 'htw-purchase-orders',   [Pages\PurchaseOrderPage::class, 'render']);
         add_submenu_page('htwarehouse', 'Báo cáo',        'Báo cáo',         'manage_options', 'htw-reports',           [Pages\ReportsPage::class,   'render']);
+        add_submenu_page('htwarehouse', 'Sao lưu',        'Sao lưu',         'manage_options', 'htw-snapshots',         [SnapshotPage::class,        'render']);
     }
 
     public function enqueue_assets(string $hook): void
@@ -107,6 +120,7 @@ class Admin
             'htwarehouse_page_htw-exports',
             'htwarehouse_page_htw-reports',
             'htwarehouse_page_htw-purchase-orders',
+            'htwarehouse_page_htw-snapshots',
         ];
 
         if (! in_array($hook, $htw_pages, true)) {

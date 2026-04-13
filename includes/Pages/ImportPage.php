@@ -221,6 +221,15 @@ class ImportPage
                 throw new \Exception('Không thể cập nhật trạng thái lô hàng: ' . $id);
             }
 
+            // Auto-transition linked PO: received + fully paid → paid_off
+            $po = $wpdb->get_row($wpdb->prepare(
+                "SELECT id, status, amount_remaining FROM {$wpdb->prefix}htw_purchase_orders WHERE import_batch_id = %d",
+                $id
+            ));
+            if ($po && $po->status === 'received' && (float) $po->amount_remaining <= 0.01) {
+                $wpdb->update($wpdb->prefix . 'htw_purchase_orders', ['status' => 'paid_off'], ['id' => $po->id]);
+            }
+
             $wpdb->query('COMMIT');
             wp_send_json_success('Lô hàng đã được xác nhận. Kho hàng đã được cập nhật.');
         } catch (\Throwable $e) {

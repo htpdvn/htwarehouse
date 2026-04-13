@@ -13,7 +13,7 @@
 defined('ABSPATH') || exit;
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-define('HTW_VERSION',    '1.0.1');
+define('HTW_VERSION',    '1.0.2');
 define('HTW_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('HTW_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('HTW_PLUGIN_FILE', __FILE__);
@@ -38,6 +38,12 @@ spl_autoload_register(function ($class) {
 // ── Activation / Deactivation ─────────────────────────────────────────────────
 register_activation_hook(__FILE__, function () {
     \HTWarehouse\Database::install();
+    \HTWarehouse\Snapshot\SnapshotScheduler::get_instance()->register_hooks();
+    \HTWarehouse\Snapshot\SnapshotScheduler::get_instance()->schedule();
+});
+
+register_deactivation_hook(__FILE__, function () {
+    \HTWarehouse\Snapshot\SnapshotScheduler::get_instance()->clear_schedule();
 });
 
 register_deactivation_hook(__FILE__, function () {

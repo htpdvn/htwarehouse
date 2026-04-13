@@ -50,7 +50,7 @@ window._htwSuppliersList = <?php echo wp_json_encode($suppliers); ?>;
 <div class="htw-wrap" x-data="htwPurchaseOrders">
 
     <div class="htw-page-header">
-        <h1 class="htw-page-title"><span class="dashicons dashicons-cart"></span> Đơn đặt hàng</h1>
+        <h1 class="htw-page-title"><span class="dashicons dashicons-cart"></span> Đơn đặt hàng NCC</h1>
         <button class="htw-btn htw-btn-primary" @click="openAdd()">+ Tạo đơn đặt hàng</button>
     </div>
 
@@ -102,15 +102,15 @@ window._htwSuppliersList = <?php echo wp_json_encode($suppliers); ?>;
                                 <template x-if="(po.status === 'confirmed' || po.status === 'paid_off') && !po.import_batch_id">
                                     <button class="htw-btn htw-btn-warning htw-btn-sm" @click="sendToImport(po.id)">Chuyển NK</button>
                                 </template>
-                                <!-- received / confirmed: payment -->
-                                <template x-if="po.status === 'confirmed' || po.status === 'received'">
+                                <!-- confirmed / received / paid_off: payment -->
+                                <template x-if="po.status === 'confirmed' || po.status === 'received' || po.status === 'paid_off'">
                                     <button class="htw-btn htw-btn-primary htw-btn-sm" @click="openPaymentModal(po)">Thanh toán</button>
                                 </template>
-                                <!-- received actions: edit, delete -->
-                                <template x-if="po.status === 'received'">
+                                <!-- received (before import) actions: edit, delete -->
+                                <template x-if="po.status === 'received' && !po.import_batch_id">
                                     <button class="htw-btn htw-btn-ghost htw-btn-sm" @click="openEdit(po)">Sửa</button>
                                 </template>
-                                <template x-if="po.status === 'received'">
+                                <template x-if="po.status === 'received' && !po.import_batch_id">
                                     <button class="htw-btn htw-btn-danger htw-btn-sm" @click="del(po.id)">Xoá</button>
                                 </template>
                             </div>
@@ -257,7 +257,7 @@ window._htwSuppliersList = <?php echo wp_json_encode($suppliers); ?>;
 
             <div class="htw-modal-footer">
                 <button class="htw-btn htw-btn-ghost" @click="detailModal=false">Đóng</button>
-                <button class="htw-btn htw-btn-primary" x-show="detailTab === 'info' && (detail.status === 'draft' || detail.status === 'received')" @click="openEditFromDetail()">Sửa đơn</button>
+                <button class="htw-btn htw-btn-primary" x-show="detailTab === 'info' && (detail.status === 'draft' || (detail.status === 'received' && !detail.import_batch_id))" @click="openEditFromDetail()">Sửa đơn</button>
             </div>
         </div>
     </div>

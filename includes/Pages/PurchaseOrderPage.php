@@ -94,7 +94,7 @@ class PurchaseOrderPage
 
         if ($id > 0) {
             $existing = $wpdb->get_row($wpdb->prepare(
-                "SELECT status, amount_paid FROM {$wpdb->prefix}htw_purchase_orders WHERE id = %d", $id
+                "SELECT status, amount_paid, import_batch_id FROM {$wpdb->prefix}htw_purchase_orders WHERE id = %d", $id
             ), ARRAY_A);
             if ($existing) {
                 $current_status = $existing['status'];
@@ -102,6 +102,16 @@ class PurchaseOrderPage
                     wp_send_json_error('Chỉ có thể sửa đơn ở trạng thái nháp hoặc đã nhận hàng.');
                 }
                 $amount_paid = (float) $existing['amount_paid'];
+
+                // Warn if editing a received PO that already has an import batch
+                if ($current_status === 'received' && ! empty($existing['import_batch_id'])) {
+                    $batch = $wpdb->get_row($wpdb->prepare(
+                        "SELECT status FROM {$wpdb->prefix}htw_import_batches WHERE id = %d", $existing['import_batch_id']
+                    ));
+                    if ($batch && $batch->status === 'draft') {
+                        wp_send_json_error('Cảnh báo: Đơn này đã tạo lô nhập kho draft. Việc sửa items sẽ KHÔNG tự động cập nhật lô nhập. Vui lòng vào trang Nhập kho để chỉnh sửa hoặc xóa lô nháp trước.');
+                    }
+                }
             }
         }
 
@@ -262,8 +272,10 @@ class PurchaseOrderPage
             ]);
         }
 
+        // Preserve existing status: keep 'paid_off' if already fully paid, otherwise set 'received'
+        $new_status = ($po->status === 'paid_off') ? 'paid_off' : 'received';
         $wpdb->update($wpdb->prefix . 'htw_purchase_orders', [
-            'status'          => 'received',
+            'status'          => $new_status,
             'import_batch_id' => $batch_id,
         ], ['id' => $id]);
 
@@ -395,6 +407,10 @@ class PurchaseOrderPage
         if (! $payment) {
             wp_send_json_error('Bản ghi thanh toán không tồn tại.');
         }
+
+        $po = $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM {$wpdb->prefix}htw_purchase_orders WHERE id = %d", $payment->po_id
+        ));
 
         $diff = $amount - (float) $payment->amount;
 

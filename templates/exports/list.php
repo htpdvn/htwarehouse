@@ -22,7 +22,7 @@ foreach ($orders as &$o) {
 }
 unset($o);
 
-$products = $wpdb->get_results("SELECT id, name, sku, unit, avg_cost FROM {$wpdb->prefix}htw_products WHERE current_stock > 0 ORDER BY name", ARRAY_A);
+$products = $wpdb->get_results("SELECT id, name, sku, unit, avg_cost, current_stock FROM {$wpdb->prefix}htw_products ORDER BY name", ARRAY_A);
 ?>
 <script>
 window._htwExports  = <?php echo wp_json_encode($orders); ?>;
@@ -145,7 +145,8 @@ window._htwProducts = <?php echo wp_json_encode($products); ?>;
                 <table class="htw-table htw-items-table">
                     <thead>
                         <tr>
-                            <th style="width:38%;">Sản phẩm</th>
+                            <th style="width:30%;">Sản phẩm</th>
+                            <th>Tồn kho</th>
                             <th>SL</th>
                             <th>Giá bán</th>
                             <th>Giá vốn TB</th>
@@ -156,16 +157,24 @@ window._htwProducts = <?php echo wp_json_encode($products); ?>;
                     </thead>
                     <tbody>
                         <template x-for="(item, idx) in form.items" :key="idx">
-                            <tr>
+                            <tr :style="item.product_id && parseNum(item.qty) > parseFloat(item.current_stock || 0) ? 'background:#fff5f5;' : ''">
                                 <td>
-                                    <select class="htw-select" x-model="item.product_id" @change="onProductChange(item)" x-html="'<option value=\'\'>-- Chọn sản phẩm --</option>' + products.map(function(p){return '<option value=\''+p.id+'\''+(item.product_id==p.id?' selected':'')+'>'+p.name+(p.sku?' ['+p.sku+']':'')+'</option>';}).join('')">
+                                    <select class="htw-select" x-model="item.product_id" @change="onProductChange(item)" x-html="'<option value=\'\'>-- Chọn sản phẩm --</option>' + products.map(function(p){return '<option value=\''+p.id+'\''+(item.product_id==p.id?' selected':'')+'>'+p.name+(p.sku?' ['+p.sku+']':'')+' (tồn: '+parseFloat(p.current_stock)+')</option>';}).join('')">
                                     </select>
                                 </td>
-                                <td><input class="htw-input" type="text"
+                                <td style="text-align:right;">
+                                    <span x-show="item.product_id" :style="parseNum(item.qty) > parseFloat(item.current_stock||0) ? 'color:#ef4444;font-weight:700;' : 'color:#22c55e;'" x-text="fmtNum(item.current_stock || 0)"></span>
+                                    <span x-show="!item.product_id" style="color:var(--htw-text-muted);">—</span>
+                                </td>
+                                <td>
+                                    <input class="htw-input" type="text"
                                            :value="fmtNum(item.qty)"
                                            @input="item.qty = parseNum($event.target.value)"
                                            @blur="$event.target.value = fmtNum(item.qty)"
-                                           placeholder="0" style="text-align:right;"></td>
+                                           :style="item.product_id && parseNum(item.qty) > parseFloat(item.current_stock||0) ? 'border-color:#ef4444;text-align:right;' : 'text-align:right;'"
+                                           placeholder="0">
+                                    <div x-show="item.product_id && parseNum(item.qty) > parseFloat(item.current_stock||0)" style="color:#ef4444;font-size:.75rem;white-space:nowrap;">⚠ Vượt tồn kho!</div>
+                                </td>
                                 <td><input class="htw-input" type="text"
                                            :value="fmtNum(item.sale_price)"
                                            @input="item.sale_price = parseNum($event.target.value)"
@@ -181,7 +190,7 @@ window._htwProducts = <?php echo wp_json_encode($products); ?>;
                     </tbody>
                     <tfoot>
                         <tr>
-                            <td colspan="2" style="padding:10px 12px;">
+                            <td colspan="3" style="padding:10px 12px;">
                                 <button type="button" class="htw-btn htw-btn-ghost htw-btn-sm" @click="addItem()">+ Thêm dòng</button>
                             </td>
                             <td colspan="2"></td>

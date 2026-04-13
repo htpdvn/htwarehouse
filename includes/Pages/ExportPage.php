@@ -102,37 +102,46 @@ class ExportPage
             $id = $wpdb->insert_id;
         }
 
-        // Grab current avg_cost for each product (preview only — not committed yet)
-        $total_revenue = 0;
-        $total_cogs    = 0;
+        // Grab current avg_cost for each product — only used to pre-fill the
+        // order form preview. COGS/revenue/profit are NOT stored for drafts to
+        // avoid stale data when avg_cost changes before confirm.
+        // Order totals are left at 0 until confirmed (when COGS is locked).
+        $total_revenue = '0';
+        $total_cogs    = '0';
+        $total_profit  = '0';
         foreach ($items as $item) {
-            $avg_cost  = (float) $wpdb->get_var($wpdb->prepare(
+            $avg_cost  = $wpdb->get_var($wpdb->prepare(
                 "SELECT avg_cost FROM {$wpdb->prefix}htw_products WHERE id = %d",
                 $item['product_id']
             ));
-            $revenue   = $item['qty'] * $item['sale_price'];
-            $cogs      = $item['qty'] * $avg_cost;
-            $profit    = $revenue - $cogs;
-            $total_revenue += $revenue;
-            $total_cogs    += $cogs;
+            $avg_str = (string) $avg_cost;
+            $qty_str = (string) $item['qty'];
+            $sp_str  = (string) $item['sale_price'];
+
+            $revenue_str = NumberHelper::mul($qty_str, $sp_str);
+            $cogs_str    = NumberHelper::mul($qty_str, $avg_str);
+            $profit_str  = NumberHelper::sub($revenue_str, $cogs_str);
+
+            $total_revenue = NumberHelper::add($total_revenue, $revenue_str);
+            $total_cogs    = NumberHelper::add($total_cogs, $cogs_str);
+            $total_profit  = NumberHelper::add($total_profit, $profit_str);
 
             $wpdb->insert($items_table, [
                 'order_id'      => $id,
                 'product_id'    => $item['product_id'],
                 'qty'           => $item['qty'],
                 'sale_price'    => $item['sale_price'],
-                'cogs_per_unit' => $avg_cost,
-                'revenue'       => $revenue,
-                'cogs'          => $cogs,
-                'profit'        => $profit,
+                // cogs_per_unit, revenue, cogs, profit left NULL for drafts —
+                // they are only populated on confirm to avoid stale preview data.
             ]);
         }
 
-        // Update order totals
+        // Update order totals — these are display-only for drafts (not locked COGS).
+        // On confirm, they are overwritten with the authoritative locked values.
         $wpdb->update($orders_table, [
             'total_revenue' => $total_revenue,
             'total_cogs'    => $total_cogs,
-            'total_profit'  => $total_revenue - $total_cogs,
+            'total_profit'  => $total_profit,
         ], ['id' => $id]);
 
         wp_send_json_success(['id' => $id, 'order_code' => $order_code, 'message' => 'Đã lưu đơn hàng.']);
@@ -187,36 +196,42 @@ class ExportPage
                 }
             }
 
-            $total_revenue = 0;
-            $total_cogs    = 0;
+            $total_revenue = '0';
+            $total_cogs    = '0';
 
             foreach ($items as $item) {
                 $pid   = (int) $item['product_id'];
                 $qty   = (float) $item['qty'];
                 $cogs_per_unit = CostCalculator::deduct_stock($pid, $stock_check[$pid], $cost_check[$pid], $qty);
-                $revenue       = (float) $item['qty'] * (float) $item['sale_price'];
-                $cogs          = (float) $item['qty'] * $cogs_per_unit;
-                $profit        = $revenue - $cogs;
+                $qty_str      = (string) $qty;
+                $sp_str       = (string) $item['sale_price'];
+                $cpu_str      = (string) $cogs_per_unit;
+                $revenue_str  = NumberHelper::mul($qty_str, $sp_str);
+                $cogs_str     = NumberHelper::mul($qty_str, $cpu_str);
+                $profit_str   = NumberHelper::sub($revenue_str, $cogs_str);
 
                 $updated = $wpdb->update($items_table, [
                     'cogs_per_unit' => $cogs_per_unit,
-                    'cogs'          => $cogs,
-                    'profit'        => $profit,
+                    'cogs'          => $cogs_str,
+                    'revenue'       => $revenue_str,
+                    'profit'        => $profit_str,
                 ], ['id' => $item['id']]);
 
                 if ($updated === false) {
                     throw new \Exception('Không thể cập nhật item: ' . $item['id']);
                 }
 
-                $total_revenue += $revenue;
-                $total_cogs    += $cogs;
+                $total_revenue = NumberHelper::add($total_revenue, $revenue_str);
+                $total_cogs    = NumberHelper::add($total_cogs, $cogs_str);
             }
+
+            $total_profit = NumberHelper::sub($total_revenue, $total_cogs);
 
             $updated = $wpdb->update($orders_table, [
                 'status'        => 'confirmed',
                 'total_revenue' => $total_revenue,
                 'total_cogs'    => $total_cogs,
-                'total_profit'  => $total_revenue - $total_cogs,
+                'total_profit'  => $total_profit,
             ], ['id' => $id]);
 
             if ($updated === false) {

@@ -184,7 +184,7 @@
 .htw-kpi-value {
   font-size: 1.6rem;
   font-weight: 700;
-  margin: 6px 0 2px;
+  margin: 6px 0;
   color: var(--htw-text);
 }
 .htw-kpi-sub {
@@ -554,4 +554,54 @@
   .htw-wrap {
     padding: 16px 12px;
   }
+}
+
+/* ── Snapshot Page ────────────────────────────────────────────────────────────── */
+.htw-card-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--htw-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 6px;
+}
+.htw-card-value {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--htw-text);
+}
+
+/* Badge variants for snapshot */
+.htw-badge-success {
+  background: rgba(22, 163, 74, 0.1);
+  color: var(--htw-success);
+}
+
+/* Toast notification */
+.htw-toast {
+  padding: 14px 20px;
+  border-radius: 10px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.12);
+  min-width: 280px;
+  max-width: 480px;
+}
+.htw-toast-success {
+  background: #16a34a;
+  color: #fff;
+}
+.htw-toast-error {
+  background: var(--htw-danger);
+  color: #fff;
+}
+.htw-toast-enter { animation: htw-toast-in 0.25s ease; }
+.htw-toast-leave { animation: htw-toast-out 0.2s ease forwards; }
+@keyframes htw-toast-in {
+  from { opacity: 0; transform: translateY(10px) scale(0.95); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes htw-toast-out {
+  from { opacity: 1; }
+  to   { opacity: 0; }
 }

@@ -114,6 +114,7 @@ class ReportsPage
         }
 
         $rows = [];
+        $has_discrepancy = false;
         foreach ($products as $p) {
             $pid = (int) $p['id'];
 
@@ -127,7 +128,14 @@ class ReportsPage
             // This gives the exact stock level at the START of the date range.
             $imports_b = $imports_before[$pid] ?? 0;
             $exports_b = $exports_before[$pid] ?? 0;
-            $opening   = max(0, $closing - $qty_in + $qty_out + $imports_b - $exports_b);
+            $raw_opening = $closing - $qty_in + $qty_out + $imports_b - $exports_b;
+
+            // If raw_opening < 0, the stock records are inconsistent — flag discrepancy
+            // but still show 0 to avoid confusing the user.
+            if ($raw_opening < 0) {
+                $has_discrepancy = true;
+            }
+            $opening = max(0, $raw_opening);
 
             $rows[] = [
                 'sku'           => $p['sku'],
@@ -141,7 +149,7 @@ class ReportsPage
             ];
         }
 
-        return ['rows' => $rows, 'date_from' => $from, 'date_to' => $to];
+        return ['rows' => $rows, 'date_from' => $from, 'date_to' => $to, 'has_discrepancy' => $has_discrepancy];
     }
 
     // ── Lợi nhuận theo sản phẩm ──────────────────────────────────────────────
