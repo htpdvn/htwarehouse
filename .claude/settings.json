@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js)",
+      "Bash(openssl dgst:*)",
+      "Bash(openssl base64:*)",
+      "Bash(curl -s https://cdn.jsdelivr.net/npm/alpinejs@3.13.5/dist/cdn.min.js)",
+      "Read(//app/**)",
+      "Read(//app/includes/**)",
+      "Read(//app/includes/Services/**)",
+      "Bash(git add:*)",
+      "Bash(ls /workspace)",
+      "Read(//var/www/html/wp-content/plugins/erp-accounting/includes/**)",
+      "Read(//var/www/html/wp-content/plugins/erp-accounting/includes/Pages/**)",
+      "Read(//tmp/**)"
+    ]
+  }
+}

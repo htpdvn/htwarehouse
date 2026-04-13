@@ -155,7 +155,7 @@ class ImportPage
         $items = $wpdb->get_results($wpdb->prepare(
             "SELECT ii.*, p.name AS product_name
              FROM {$items_table} ii
-             JOIN {$wpdb->prefix}htw_products p ON p.id = ii.product_id
+             LEFT JOIN {$wpdb->prefix}htw_products p ON p.id = ii.product_id
              WHERE ii.batch_id = %d",
             $id
         ), ARRAY_A);

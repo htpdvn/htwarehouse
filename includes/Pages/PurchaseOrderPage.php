@@ -221,7 +221,7 @@ class PurchaseOrderPage
         $items = $wpdb->get_results($wpdb->prepare(
             "SELECT poi.*, p.name AS product_name
              FROM {$wpdb->prefix}htw_purchase_order_items poi
-             JOIN {$wpdb->prefix}htw_products p ON p.id = poi.product_id
+             LEFT JOIN {$wpdb->prefix}htw_products p ON p.id = poi.product_id
              WHERE poi.po_id = %d", $id
         ), ARRAY_A);
 

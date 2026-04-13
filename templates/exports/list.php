@@ -15,7 +15,7 @@ foreach ($orders as &$o) {
     $o['items'] = $wpdb->get_results($wpdb->prepare(
         "SELECT ei.*, p.name AS product_name
          FROM {$wpdb->prefix}htw_export_items ei
-         JOIN {$wpdb->prefix}htw_products p ON p.id = ei.product_id
+         LEFT JOIN {$wpdb->prefix}htw_products p ON p.id = ei.product_id
          WHERE ei.order_id = %d",
         $o['id']
     ), ARRAY_A);

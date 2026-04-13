@@ -205,7 +205,7 @@ class SnapshotService
         global $wpdb;
 
         $dir     = self::get_snapshot_dir();
-        $filepath = $dir . '/' . basename($filename); // basename to prevent path traversal
+        $filepath = $dir . '/' . basename($filename);
 
         if (! file_exists($filepath)) {
             throw new \Exception('File snapshot không tồn tại: ' . $filename);
@@ -223,43 +223,82 @@ class SnapshotService
 
         // Step 1: Create emergency backup of current state
         $emergency = self::create();
-        // Rename emergency backup so it doesn't clutter the list
         $emergency_name = str_replace('.json', '-EMERGENCY.json', basename($emergency['filename']));
         rename($emergency['path'], $dir . '/' . $emergency_name);
         $emergency['filename'] = $emergency_name;
 
-        // Step 2: Begin restore transaction
+        // Step 2: Begin restore transaction — uses DELETE (not TRUNCATE)
+        // because TRUNCATE is DDL and auto-commits in MySQL, breaking transaction protection.
         $wpdb->query('START TRANSACTION');
 
         try {
             $restored_counts = [];
             $table_keys      = self::get_table_keys();
-            $reverse_keys    = array_flip($table_keys);
+            $insert_errors   = [];
 
-            foreach (self::get_tables() as $table) {
+            // Restore in REVERSE order: parents first, then children.
+            // This preserves FK relationships because parent rows get their
+            // original IDs restored before child rows reference them.
+            $tables_rev = array_reverse(self::get_tables());
+
+            foreach ($tables_rev as $table) {
                 $short_key = $table_keys[ $table ];
 
-                // Clear existing data
-                $wpdb->query("TRUNCATE TABLE {$table}");
+                // Clear existing data with DELETE (safe within transaction)
+                $wpdb->query("DELETE FROM {$table}");
 
                 if (! empty($snapshot['tables'][ $short_key ])) {
-                    $rows = $snapshot['tables'][ $short_key ];
+                    $rows     = $snapshot['tables'][ $short_key ];
+                    $inserted = 0;
+
+                    // Reset AUTO_INCREMENT to max(original IDs) + 1 so inserts
+                    // reuse the original IDs and preserve FK relationships.
+                    $max_id = 0;
+                    foreach ($rows as $row) {
+                        if (isset($row['id']) && $row['id'] > $max_id) {
+                            $max_id = (int) $row['id'];
+                        }
+                    }
+                    if ($max_id > 0) {
+                        $wpdb->query($wpdb->prepare(
+                            "ALTER TABLE {$table} AUTO_INCREMENT = %d",
+                            $max_id + 1
+                        ));
+                    }
 
                     foreach ($rows as $row) {
-                        // Remove AUTO_INCREMENT id from insert — let DB assign new id
-                        unset($row['id']);
-
                         // Remove created_at/updated_at — let DB use DEFAULT
                         unset($row['created_at']);
                         unset($row['updated_at']);
+                        // Keep original 'id' — preserves FK references in child tables
 
-                        $wpdb->insert($table, $row);
+                        $result = $wpdb->insert($table, $row);
+                        if ($result === false) {
+                            $insert_errors[] = sprintf(
+                                '%s row %d: %s',
+                                $short_key,
+                                $inserted + 1,
+                                $wpdb->last_error
+                            );
+                        } else {
+                            $inserted++;
+                        }
                     }
 
-                    $restored_counts[ $short_key ] = count($rows);
+                    $restored_counts[ $short_key ] = $inserted;
                 } else {
                     $restored_counts[ $short_key ] = 0;
                 }
+            }
+
+            // If any inserts failed, abort the restore so no partial data is committed
+            if (! empty($insert_errors)) {
+                $wpdb->query('ROLLBACK');
+                $error_summary = implode('; ', array_slice($insert_errors, 0, 5));
+                if (count($insert_errors) > 5) {
+                    $error_summary .= sprintf(' (+%d lỗi khác)', count($insert_errors) - 5);
+                }
+                throw new \Exception('Lỗi khi chèn dữ liệu — rollback. Chi tiết: ' . $error_summary);
             }
 
             $wpdb->query('COMMIT');

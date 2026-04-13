@@ -17,7 +17,7 @@ foreach ($batches as &$b) {
     $b['items'] = $wpdb->get_results($wpdb->prepare(
         "SELECT ii.*, p.name AS product_name
          FROM {$wpdb->prefix}htw_import_items ii
-         JOIN {$wpdb->prefix}htw_products p ON p.id = ii.product_id
+         LEFT JOIN {$wpdb->prefix}htw_products p ON p.id = ii.product_id
          WHERE ii.batch_id = %d",
         $b['id']
     ), ARRAY_A);

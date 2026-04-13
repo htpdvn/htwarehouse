@@ -1174,20 +1174,20 @@
         toast: { show: false, message: '', type: 'success' },
 
         init: function () {
-          this.lastRun = (this.lastStatus && this.lastStatus.run_at)
-                        ? this.fmtDate(this.lastStatus.run_at) : null;
+          var _runAt = this.lastStatus && this.lastStatus.run_at;
+          this.lastRun = _runAt ? this._fmtDt(_runAt) : null;
           this.fetchStatus();
         },
 
         fetchStatus: function () {
           var self = this;
-          jQuery.post(HTW.ajaxUrl, { action: 'htw_snapshot_status', nonce: HTW.nonce }, function (res) {
+          HTWApp.request('htw_snapshot_status', {}, function (res) {
             if (res.success && res.data) {
               self.scheduled  = res.data.is_scheduled;
               self.nextRunStr = res.data.next_run || null;
               self.lastStatus = res.data.last_status || null;
               if (self.lastStatus && self.lastStatus.run_at) {
-                self.lastRun = self.fmtDate(self.lastStatus.run_at);
+                self.lastRun = self._fmtDt(self.lastStatus.run_at);
               }
             }
           });
@@ -1255,7 +1255,7 @@
           return (s.row_counts && s.row_counts[key]) ? s.row_counts[key] : '—';
         },
 
-        fmtDate: function (str) {
+        _fmtDt: function (str) {
           if (!str) return '—';
           var d = new Date(String(str).replace(' ', 'T'));
           if (isNaN(d.getTime())) return str;
