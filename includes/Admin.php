@@ -21,6 +21,7 @@ class Admin
     {
         add_action('admin_menu',            [$this, 'register_menus']);
         add_action('admin_enqueue_scripts', [$this, 'enqueue_assets']);
+        add_filter('script_loader_tag',      [$this, 'add_sri_attributes'], 10, 2);
 
         // AJAX handlers
         add_action('wp_ajax_htw_save_product',            [Pages\ProductsPage::class, 'ajax_save']);
@@ -32,6 +33,7 @@ class Admin
         add_action('wp_ajax_htw_save_export',        [Pages\ExportPage::class,   'ajax_save']);
         add_action('wp_ajax_htw_delete_export',      [Pages\ExportPage::class,   'ajax_delete']);
         add_action('wp_ajax_htw_confirm_export',     [Pages\ExportPage::class,   'ajax_confirm']);
+        add_action('wp_ajax_htw_export_detail',      [Pages\ExportPage::class,   'ajax_export_detail']);
         add_action('wp_ajax_htw_report_data',        [Pages\ReportsPage::class,      'ajax_data']);
         add_action('wp_ajax_htw_dashboard_data',    [Pages\DashboardPage::class,   'ajax_data']);
         add_action('wp_ajax_htw_save_po',             [Pages\PurchaseOrderPage::class, 'ajax_save']);
@@ -44,6 +46,34 @@ class Admin
         add_action('wp_ajax_htw_save_supplier',            [Pages\SuppliersPage::class, 'ajax_save']);
         add_action('wp_ajax_htw_delete_supplier',          [Pages\SuppliersPage::class, 'ajax_delete']);
         add_action('wp_ajax_htw_supplier_transactions',    [Pages\SuppliersPage::class, 'ajax_transactions']);
+    }
+
+    /**
+     * Add SRI (Subresource Integrity) and crossorigin attributes to CDN scripts.
+     *
+     * @param string $tag  The generated <script> tag.
+     * @param string $handle  WordPress script handle.
+     * @return string Modified tag.
+     */
+    public function add_sri_attributes(string $tag, string $handle): string
+    {
+        // SRI (Subresource Integrity) hashes — verify at:
+        //   https://www.jsdelivr.com/package/npm/chart.js@4.4.2
+        //   https://www.jsdelivr.com/package/npm/alpinejs@3.13.5
+        // Or run:  openssl dgst -sha384 -binary <(curl -s URL) | openssl base64 -A
+        //
+        // Uncomment and fill after verifying:
+        // $sri_map = [
+        //     'chartjs'  => ['integrity' => 'sha384-XXXXXXXX', 'crossorigin' => 'anonymous'],
+        //     'alpinejs' => ['integrity' => 'sha384-XXXXXXXX', 'crossorigin' => 'anonymous'],
+        // ];
+        // if (isset($sri_map[$handle])) {
+        //     $attrs = 'integrity="' . $sri_map[$handle]['integrity'] . '" '
+        //            . 'crossorigin="' . $sri_map[$handle]['crossorigin'] . '"';
+        //     $tag = str_replace(' src=', ' ' . $attrs . ' src=', $tag);
+        // }
+
+        return $tag;
     }
 
     public function register_menus(): void

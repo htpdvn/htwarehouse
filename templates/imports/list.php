@@ -110,12 +110,16 @@ $products = $wpdb->get_results("SELECT * FROM {$wpdb->prefix}htw_products ORDER 
                 </div>
                 <div class="htw-field">
                     <label class="htw-label">Nhà cung cấp</label>
-                    <select class="htw-select" x-model="form.supplier">
-                        <option value="">-- Chọn nhà cung cấp --</option>
+                    <select class="htw-select" x-model="form.supplier_id" @change="form.supplier = suppliersList.find(function(s){return s.id==form.supplier_id}) ? suppliersList.find(function(s){return s.id==form.supplier_id}).name : ''">
+                        <option value="0">-- Khác / Tự nhập --</option>
                         <template x-for="s in suppliersList" :key="s.id">
-                            <option :value="s.name" x-text="s.name + (s.phone ? ' (' + s.phone + ')' : '')"></option>
+                            <option :value="s.id" x-text="s.name + (s.phone ? ' (' + s.phone + ')' : '')"></option>
                         </template>
                     </select>
+                </div>
+                <div class="htw-field" x-show="!form.supplier_id">
+                    <label class="htw-label">Tên NCC (tự nhập)</label>
+                    <input class="htw-input" x-model="form.supplier" placeholder="VD: Công ty TNHH ABC">
                 </div>
                 <div class="htw-field">
                     <label class="htw-label">Ngày nhập</label>

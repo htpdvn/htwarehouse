@@ -62,8 +62,8 @@ class DashboardPage
              FROM {$wpdb->prefix}htw_export_orders
              WHERE status = 'confirmed'
                AND order_date >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)
-             GROUP BY month
-             ORDER BY month ASC",
+             GROUP BY DATE_FORMAT(order_date, '%Y-%m')
+             ORDER BY MIN(order_date) ASC",
             ARRAY_A
         );
 

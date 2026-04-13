@@ -6,6 +6,7 @@ defined('ABSPATH') || exit;
 
 /**
  * Weighted Average Cost calculator + stock updater.
+ * Uses bcmath via NumberHelper when available for precision.
  */
 class CostCalculator
 {
@@ -17,38 +18,33 @@ class CostCalculator
      *   new_avg = (current_stock * current_avg + qty * new_unit_cost) / (current_stock + qty)
      *
      * @param int    $product_id
-     * @param float  $qty           Quantity being added.
-     * @param float  $new_unit_cost Fully allocated cost per unit (after fee distribution).
+     * @param string $old_stock     Current stock at time of lock (already FOR UPDATE'd by caller).
+     * @param string $old_avg       Current avg_cost at time of lock (already FOR UPDATE'd by caller).
+     * @param string $qty            Quantity being added.
+     * @param string $new_unit_cost Fully allocated cost per unit (after fee distribution).
      */
-    public static function add_stock(int $product_id, float $qty, float $new_unit_cost): void
+    public static function add_stock(int $product_id, string $old_stock, string $old_avg, string $qty, string $new_unit_cost): void
     {
         global $wpdb;
         $table = $wpdb->prefix . 'htw_products';
 
-        $product = $wpdb->get_row(
-            $wpdb->prepare("SELECT current_stock, avg_cost FROM {$table} WHERE id = %d", $product_id)
-        );
+        $total_qty = NumberHelper::add($old_stock, $qty);
+        $old_total = NumberHelper::mul($old_stock, $old_avg);
+        $new_total = NumberHelper::mul($qty, $new_unit_cost);
+        $sum       = NumberHelper::add($old_total, $new_total);
 
-        if (! $product) {
-            return;
-        }
-
-        $old_stock = (float) $product->current_stock;
-        $old_avg   = (float) $product->avg_cost;
-
-        $total_qty  = $old_stock + $qty;
-        $new_avg    = $total_qty > 0
-            ? (($old_stock * $old_avg) + ($qty * $new_unit_cost)) / $total_qty
+        $new_avg = NumberHelper::comp($total_qty, '0', 4) > 0
+            ? NumberHelper::div($sum, $total_qty, 4)
             : $new_unit_cost;
 
         $wpdb->update(
             $table,
             [
                 'current_stock' => $total_qty,
-                'avg_cost'      => round($new_avg, 4),
+                'avg_cost'      => $new_avg,
             ],
             ['id' => $product_id],
-            ['%s', '%s'],
+            ['%f', '%f'],
             ['%d']
         );
     }
@@ -56,34 +52,27 @@ class CostCalculator
     /**
      * Deduct stock when a sale order is confirmed.
      *
-     * @param int   $product_id
-     * @param float $qty
+     * @param int    $product_id
+     * @param float  $locked_stock   Current stock at time of FOR UPDATE lock (read by caller).
+     * @param float  $locked_avg     avg_cost at time of FOR UPDATE lock (read by caller).
+     * @param float  $qty            Quantity to deduct.
      * @return float The avg_cost per unit at the time of deduction.
      */
-    public static function deduct_stock(int $product_id, float $qty): float
+    public static function deduct_stock(int $product_id, float $locked_stock, float $locked_avg, float $qty): float
     {
         global $wpdb;
-        $table   = $wpdb->prefix . 'htw_products';
-        $product = $wpdb->get_row(
-            $wpdb->prepare("SELECT current_stock, avg_cost FROM {$table} WHERE id = %d", $product_id)
-        );
-
-        if (! $product) {
-            return 0.0;
-        }
-
-        $cogs_per_unit = (float) $product->avg_cost;
-        $new_stock     = max(0, (float) $product->current_stock - $qty);
+        $table     = $wpdb->prefix . 'htw_products';
+        $new_stock = max(0, $locked_stock - $qty);
 
         $wpdb->update(
             $table,
             ['current_stock' => $new_stock],
             ['id' => $product_id],
-            ['%s'],
+            ['%f'],
             ['%d']
         );
 
-        return $cogs_per_unit;
+        return $locked_avg;
     }
 
     /**

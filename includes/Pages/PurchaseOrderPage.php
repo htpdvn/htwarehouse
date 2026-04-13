@@ -2,27 +2,9 @@
 
 namespace HTWarehouse\Pages;
 
+use HTWarehouse\Services\NumberHelper;
+
 defined('ABSPATH') || exit;
-
-/**
- * Decimal-aware comparison helpers using bcmath when available,
- * falling back to epsilon comparison for environments without it.
- */
-function htw_bc_is_zero_or_negative(string $value): bool
-{
-    if (function_exists('bccomp')) {
-        return bccomp($value, '0', 4) <= 0;
-    }
-    return (float) $value <= 0.0001;
-}
-
-function htw_bc_is_positive(string $value): bool
-{
-    if (function_exists('bccomp')) {
-        return bccomp($value, '0', 4) > 0;
-    }
-    return (float) $value > 0.0001;
-}
 
 class PurchaseOrderPage
 {
@@ -72,7 +54,7 @@ class PurchaseOrderPage
                     "SELECT id FROM {$po_table} WHERE po_code = %s", $po_code
                 ));
                 $attempts++;
-            } while ($exists && $attempts < 5);
+            } while ($exists && $attempts < 10);
             if ($exists) {
                 wp_send_json_error('Không thể tạo mã đơn không trùng lặp. Vui lòng nhập mã thủ công.');
             }
@@ -241,7 +223,7 @@ class PurchaseOrderPage
                 "SELECT id FROM {$batch_table} WHERE batch_code = %s", $batch_code
             ));
             $attempts++;
-        } while ($exists && $attempts < 5);
+        } while ($exists && $attempts < 10);
 
         // Resolve supplier name: prefer denormalized field, fall back to suppliers table
         $supplier_name = $po->supplier_name;
@@ -253,6 +235,7 @@ class PurchaseOrderPage
 
         $batch_data = [
             'batch_code'     => $batch_code,
+            'supplier_id'   => $po->supplier_id ?: null,
             'supplier'       => $supplier_name,
             'import_date'    => current_time('Y-m-d'),
             'shipping_fee'  => (float) $po->shipping_fee,
@@ -324,9 +307,9 @@ class PurchaseOrderPage
             'note'         => $note,
         ]);
 
-        $new_paid      = (float) $po->amount_paid + $amount;
+        $new_paid      = NumberHelper::computePaidFromPayments($wpdb, $id);
         $new_remaining = max(0, (float) $po->total_amount - $new_paid);
-        $new_status    = htw_bc_is_zero_or_negative(number_format($new_remaining, 4, '.', '')) ? 'paid_off' : $po->status;
+        $new_status    = NumberHelper::isZeroOrNegative(number_format($new_remaining, 2, '.', '')) ? 'paid_off' : $po->status;
 
         $wpdb->update($wpdb->prefix . 'htw_purchase_orders', [
             'amount_paid'      => $new_paid,
@@ -421,13 +404,10 @@ class PurchaseOrderPage
             'note'         => $note,
         ], ['id' => $payment_id]);
 
-        // Recalculate PO totals
-        $po = $wpdb->get_row($wpdb->prepare(
-            "SELECT * FROM {$wpdb->prefix}htw_purchase_orders WHERE id = %d", $payment->po_id
-        ));
-        $new_paid      = (float) $po->amount_paid + $diff;
+        // Recalculate PO totals from SUM of payments — authoritative source
+        $new_paid      = NumberHelper::computePaidFromPayments($wpdb, $payment->po_id);
         $new_remaining = max(0, (float) $po->total_amount - $new_paid);
-        $new_status    = htw_bc_is_zero_or_negative(number_format($new_remaining, 4, '.', '')) ? 'paid_off' : $po->status;
+        $new_status    = NumberHelper::isZeroOrNegative(number_format($new_remaining, 2, '.', '')) ? 'paid_off' : $po->status;
 
         $wpdb->update($wpdb->prefix . 'htw_purchase_orders', [
             'amount_paid'      => $new_paid,
@@ -467,9 +447,10 @@ class PurchaseOrderPage
 
         $wpdb->delete($wpdb->prefix . 'htw_po_payments', ['id' => $payment_id]);
 
-        $new_paid      = max(0, (float) $po->amount_paid - (float) $payment->amount);
+        // Recalculate from SUM of payments — authoritative source
+        $new_paid      = NumberHelper::computePaidFromPayments($wpdb, $payment->po_id);
         $new_remaining = max(0, (float) $po->total_amount - $new_paid);
-        $new_status    = ($po->status === 'paid_off' && htw_bc_is_positive(number_format($new_remaining, 4, '.', ''))) ? 'received' : $po->status;
+        $new_status    = ($po->status === 'paid_off' && NumberHelper::isPositive(number_format($new_remaining, 2, '.', ''))) ? 'received' : $po->status;
 
         $wpdb->update($wpdb->prefix . 'htw_purchase_orders', [
             'amount_paid'      => $new_paid,

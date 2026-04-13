@@ -118,7 +118,7 @@
             options: {
               responsive: true,
               plugins: {
-                legend: { labels: { color: '#e2e8f0' } },
+                legend: { labels: { color: '#6b7280' } },
                 tooltip: {
                   callbacks: {
                     label: function (ctx) {
@@ -128,8 +128,8 @@
                 }
               },
               scales: {
-                x: { ticks: { color: '#8892a4' }, grid: { color: '#2d3150' } },
-                y: { ticks: { color: '#8892a4', callback: function(v) { return (v/1000000).toFixed(1) + 'M'; } }, grid: { color: '#2d3150' } }
+                x: { ticks: { color: '#6b7280' }, grid: { color: '#dde1ec' } },
+                y: { ticks: { color: '#6b7280', callback: function(v) { return (v/1000000).toFixed(1) + 'M'; } }, grid: { color: '#dde1ec' } }
               }
             }
           });
@@ -270,7 +270,7 @@
         detail:   null,
         saving:   false,
         form: {
-          id: 0, batch_code: '', supplier: '',
+          id: 0, batch_code: '', supplier_id: 0, supplier: '',
           import_date: new Date().toISOString().split('T')[0],
           shipping_fee: 0, tax_fee: 0, service_fee: 0, inspection_fee: 0,
           packing_fee: 0, other_fee: 0, notes: '',
@@ -303,7 +303,7 @@
         },
 
         openAdd: function () {
-          this.form = { id: 0, batch_code: '', supplier: '', import_date: new Date().toISOString().split('T')[0], shipping_fee: '', tax_fee: '', service_fee: '', inspection_fee: '', packing_fee: '', other_fee: '', notes: '', items: [] };
+          this.form = { id: 0, batch_code: '', supplier_id: 0, supplier: '', import_date: new Date().toISOString().split('T')[0], shipping_fee: '', tax_fee: '', service_fee: '', inspection_fee: '', packing_fee: '', other_fee: '', notes: '', items: [] };
           this.addItem();
           this.modal = true;
         },
@@ -316,7 +316,9 @@
         openEdit: function (b) {
           var self = this;
           self.form = {
-            id: b.id, batch_code: b.batch_code, supplier: b.supplier,
+            id: b.id, batch_code: b.batch_code,
+            supplier_id: b.supplier_id || 0,
+            supplier: b.supplier,
             import_date: b.import_date,
             shipping_fee: b.shipping_fee || '',
             tax_fee: b.tax_fee || '',
@@ -363,7 +365,9 @@
           var self = this;
           self.saving = true;
           var data = {
-            id: self.form.id, batch_code: self.form.batch_code, supplier: self.form.supplier,
+            id: self.form.id, batch_code: self.form.batch_code,
+            supplier_id: self.form.supplier_id || 0,
+            supplier: self.form.supplier,
             import_date: self.form.import_date,
             shipping_fee: self.form.shipping_fee,
             tax_fee: self.form.tax_fee,
@@ -413,8 +417,10 @@
       return {
         orders:   orders,
         products: products,
-        modal:    false,
-        saving:   false,
+        modal:         false,
+        detailModal:   false,
+        detailOrder:   null,
+        saving:        false,
         filterChannel: '',
         form: {
           id: 0, order_code: '', channel: 'facebook',
@@ -495,10 +501,34 @@
         },
 
         confirm: function (id) {
+          var self = this;
           if (!confirm('Xác nhận đơn hàng và trừ kho?')) return;
           HTWApp.request('htw_confirm_export', { id: id }, function (res) {
-            if (res.success) { location.reload(); }
-            else             { alert(res.data); }
+            if (res.success) {
+              // Fetch the just-confirmed order from the server so we have the real totals
+              HTWApp.request('htw_export_detail', { id: id }, function (dr) {
+                if (dr.success) {
+                  self.detailOrder = dr.data;
+                  self.detailModal = true;
+                } else {
+                  location.reload();
+                }
+              });
+            } else {
+              alert(res.data);
+            }
+          });
+        },
+
+        openDetail: function (id) {
+          var self = this;
+          HTWApp.request('htw_export_detail', { id: id }, function (res) {
+            if (res.success) {
+              self.detailOrder = res.data;
+              self.detailModal = true;
+            } else {
+              alert(res.data || 'Không thể tải chi tiết đơn hàng.');
+            }
           });
         },
 
@@ -919,6 +949,26 @@
               alert(res.data);
             }
           });
+        },
+
+        onSupplierChange: function () {
+          var supplierId = parseInt(this.form.supplier_id, 10);
+          if (!supplierId) {
+            this.form.supplier_name    = '';
+            this.form.supplier_contact = '';
+            this.form.supplier_phone   = '';
+            this.form.supplier_address = '';
+            return;
+          }
+          var supplier = (this.suppliersList || []).find(function (s) {
+            return parseInt(s.id, 10) === supplierId;
+          });
+          if (supplier) {
+            this.form.supplier_name    = supplier.name         || '';
+            this.form.supplier_contact = supplier.contact_name || '';
+            this.form.supplier_phone   = supplier.phone        || '';
+            this.form.supplier_address = supplier.address     || '';
+          }
         },
 
         fmt: function (n) {

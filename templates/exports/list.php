@@ -89,6 +89,9 @@ window._htwProducts = <?php echo wp_json_encode($products); ?>;
                                     <button class="htw-btn htw-btn-danger htw-btn-sm" @click="del(o.id)">Xoá</button>
                                 </template>
                                 <template x-if="o.status === 'confirmed'">
+                                    <button class="htw-btn htw-btn-info htw-btn-sm" @click="openDetail(o.id)">Chi tiết</button>
+                                </template>
+                                <template x-if="o.status === 'confirmed'">
                                     <span style="color:var(--htw-text-muted);font-size:.8rem;">— khoá —</span>
                                 </template>
                             </div>
@@ -201,6 +204,88 @@ window._htwProducts = <?php echo wp_json_encode($products); ?>;
                     <span x-show="saving" class="htw-spinner"></span>
                     <span x-text="saving ? 'Đang lưu…' : 'Lưu đơn nháp'"></span>
                 </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Order Detail Modal (confirmed orders) -->
+    <div class="htw-modal-overlay" x-show="detailModal" x-cloak @click.self="detailModal=false">
+        <div class="htw-modal" style="max-width:700px;" @click.stop>
+            <div class="htw-modal-title">
+                <span class="dashicons dashicons-clipboard"></span>
+                <span>Chi tiết đơn hàng</span>
+                <span x-show="detailOrder" style="font-weight:400;color:var(--htw-text-muted);" x-text="' — ' + (detailOrder.order_code || '')"></span>
+            </div>
+
+            <template x-if="detailOrder">
+                <div>
+                    <!-- Summary badges -->
+                    <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
+                        <span :class="'htw-badge htw-badge-' + detailOrder.channel" x-text="channelLabel(detailOrder.channel)"></span>
+                        <span class="htw-badge htw-badge-confirmed">Đã xác nhận</span>
+                        <span style="color:var(--htw-text-muted);font-size:.8rem;align-self:center;" x-text="fmtDate(detailOrder.order_date)"></span>
+                        <span x-show="detailOrder.customer_name" style="color:var(--htw-text-muted);font-size:.8rem;align-self:center;" x-text="'• Khách: ' + detailOrder.customer_name"></span>
+                    </div>
+
+                    <!-- Financial summary -->
+                    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px;">
+                        <div style="background:#f8f9fa;border:1px solid #e2e8f0;border-radius:8px;padding:12px;text-align:center;">
+                            <div style="color:var(--htw-text-muted);font-size:.75rem;margin-bottom:4px;">DOANH THU</div>
+                            <div style="font-weight:700;color:var(--htw-primary);font-size:1.1rem;" x-text="fmt(detailOrder.total_revenue)"></div>
+                        </div>
+                        <div style="background:#f8f9fa;border:1px solid #e2e8f0;border-radius:8px;padding:12px;text-align:center;">
+                            <div style="color:var(--htw-text-muted);font-size:.75rem;margin-bottom:4px;">GIÁ VỐN</div>
+                            <div style="font-weight:700;color:#64748b;font-size:1.1rem;" x-text="fmt(detailOrder.total_cogs)"></div>
+                        </div>
+                        <div style="background:#f8f9fa;border:1px solid #e2e8f0;border-radius:8px;padding:12px;text-align:center;">
+                            <div style="color:var(--htw-text-muted);font-size:.75rem;margin-bottom:4px;">LỢI NHUẬN</div>
+                            <div style="font-weight:700;font-size:1.1rem;"
+                                 :style="{color: parseFloat(detailOrder.total_profit) >= 0 ? '#22c55e' : '#ef4444'}"
+                                 x-text="fmt(detailOrder.total_profit)"></div>
+                        </div>
+                    </div>
+
+                    <!-- Items table -->
+                    <div style="font-weight:600;margin-bottom:8px;">Sản phẩm đã bán</div>
+                    <div class="htw-items-table-wrap" style="margin-bottom:14px;">
+                        <table class="htw-table htw-items-table">
+                            <thead>
+                                <tr>
+                                    <th>Sản phẩm</th>
+                                    <th style="text-align:right;">SL</th>
+                                    <th style="text-align:right;">Giá vốn</th>
+                                    <th style="text-align:right;">Giá bán</th>
+                                    <th style="text-align:right;">Doanh thu</th>
+                                    <th style="text-align:right;">Lợi nhuận</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <template x-for="item in detailOrder.items" :key="item.id">
+                                    <tr>
+                                        <td x-text="item.product_name || '—'"></td>
+                                        <td style="text-align:right;" x-text="fmtNum(item.qty)"></td>
+                                        <td style="text-align:right;color:var(--htw-text-muted);" x-text="fmt(item.cogs_per_unit)"></td>
+                                        <td style="text-align:right;" x-text="fmt(item.sale_price)"></td>
+                                        <td style="text-align:right;font-weight:600;" x-text="fmt(item.qty * item.sale_price)"></td>
+                                        <td style="text-align:right;font-weight:600;"
+                                            :style="{color: parseFloat(item.profit) >= 0 ? '#22c55e' : '#ef4444'}"
+                                            x-text="fmt(item.profit)"></td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Notes -->
+                    <div x-show="detailOrder.notes" style="margin-bottom:16px;">
+                        <div style="font-weight:600;margin-bottom:4px;">Ghi chú</div>
+                        <div style="color:var(--htw-text-muted);font-size:.85rem;background:#f8f9fa;padding:10px;border-radius:6px;" x-text="detailOrder.notes"></div>
+                    </div>
+                </div>
+            </template>
+
+            <div class="htw-modal-footer">
+                <button class="htw-btn htw-btn-primary" @click="detailModal=false">Đóng</button>
             </div>
         </div>
     </div>

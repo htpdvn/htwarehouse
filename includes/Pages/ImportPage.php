@@ -3,6 +3,7 @@
 namespace HTWarehouse\Pages;
 
 use HTWarehouse\Services\CostCalculator;
+use HTWarehouse\Services\NumberHelper;
 
 defined('ABSPATH') || exit;
 
@@ -15,7 +16,7 @@ class ImportPage
 
         global $wpdb;
         $suppliers = $wpdb->get_results(
-            "SELECT id, name, phone, email FROM {$wpdb->prefix}htw_suppliers ORDER BY name ASC",
+            "SELECT * FROM {$wpdb->prefix}htw_suppliers ORDER BY name",
             ARRAY_A
         );
 
@@ -32,6 +33,7 @@ class ImportPage
 
         $id           = absint($_POST['id'] ?? 0);
         $batch_code   = sanitize_text_field($_POST['batch_code'] ?? '');
+        $supplier_id  = absint($_POST['supplier_id'] ?? 0) ?: null;
         $supplier     = sanitize_text_field($_POST['supplier'] ?? '');
         $import_date  = sanitize_text_field($_POST['import_date'] ?? current_time('Y-m-d'));
         $shipping_fee    = (float) ($_POST['shipping_fee'] ?? 0);
@@ -54,7 +56,7 @@ class ImportPage
                     $batch_code
                 ));
                 $attempts++;
-            } while ($exists && $attempts < 5);
+            } while ($exists && $attempts < 10);
             if ($exists) {
                 wp_send_json_error('Không thể tạo mã lô không trùng lặp. Vui lòng nhập mã lô thủ công.');
             }
@@ -91,7 +93,8 @@ class ImportPage
 
         $batch_data = [
             'batch_code'     => $batch_code,
-            'supplier'       => $supplier,
+            'supplier_id'   => $supplier_id,
+            'supplier'      => $supplier,
             'import_date'    => $import_date,
             'shipping_fee'   => $shipping_fee,
             'tax_fee'        => $tax_fee,
@@ -179,15 +182,19 @@ class ImportPage
 
         try {
             // Acquire row-level locks for all affected product rows.
+            $locked = [];
             foreach ($items as $item) {
-                $wpdb->get_var($wpdb->prepare(
-                    "SELECT id FROM {$wpdb->prefix}htw_products WHERE id = %d FOR UPDATE",
+                $product = $wpdb->get_row($wpdb->prepare(
+                    "SELECT current_stock, avg_cost FROM {$wpdb->prefix}htw_products WHERE id = %d FOR UPDATE",
                     (int) $item['product_id']
-                ));
+                ), ARRAY_A);
+                $locked[(int) $item['product_id']] = $product;
             }
 
             // Update WAC and stock for each product
             foreach ($items as $item) {
+                $pid = (int) $item['product_id'];
+
                 // Update the item with allocated cost
                 $updated = $wpdb->update($items_table, [
                     'allocated_cost_per_unit' => $item['allocated_cost_per_unit'],
@@ -198,11 +205,13 @@ class ImportPage
                     throw new \Exception('Không thể cập nhật item: ' . $item['id']);
                 }
 
-                // Apply WAC
+                // Apply WAC using locked values — no additional SELECT needed.
                 CostCalculator::add_stock(
-                    (int)   $item['product_id'],
-                    (float) $item['qty'],
-                    (float) $item['allocated_cost_per_unit']
+                    $pid,
+                    (string) $locked[$pid]['current_stock'],
+                    (string) $locked[$pid]['avg_cost'],
+                    (string) $item['qty'],
+                    (string) $item['allocated_cost_per_unit']
                 );
             }
 

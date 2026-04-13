@@ -296,7 +296,7 @@ window._htwSuppliersList = <?php echo wp_json_encode($suppliers); ?>;
                 </div>
                 <div class="htw-field">
                     <label class="htw-label">Chọn nhà cung cấp</label>
-                    <select class="htw-select" x-model="form.supplier_id">
+                    <select class="htw-select" x-model="form.supplier_id" @change="onSupplierChange()">
                         <option value="0">-- Chọn NCC --</option>
                         <?php foreach ($suppliers as $s): ?>
                         <option value="<?php echo (int)$s['id']; ?>"><?php echo esc_html($s['name']); ?></option>

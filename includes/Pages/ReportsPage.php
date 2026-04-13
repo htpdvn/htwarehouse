@@ -46,12 +46,15 @@ class ReportsPage
         global $wpdb;
         $rows = $wpdb->get_results(
             "SELECT id, sku, name, category, unit, current_stock, avg_cost,
-                    (current_stock * avg_cost) AS inventory_value
+                    COALESCE(current_stock, 0) * COALESCE(avg_cost, 0) AS inventory_value
              FROM {$wpdb->prefix}htw_products
              ORDER BY category, name",
             ARRAY_A
         );
-        $total_value = array_sum(array_column($rows, 'inventory_value'));
+        $total_value = 0;
+        foreach ($rows as $row) {
+            $total_value += (float) $row['inventory_value'];
+        }
         return ['rows' => $rows, 'total_inventory_value' => $total_value];
     }
 
@@ -120,11 +123,11 @@ class ReportsPage
 
             // Inventory identity:
             //   closing = (imports_before - exports_before) + qty_in - qty_out
-            // So:  opening = closing - qty_in + qty_out - imports_before + exports_before
+            // So:  opening = closing - qty_in + qty_out + imports_before - exports_before
             // This gives the exact stock level at the START of the date range.
             $imports_b = $imports_before[$pid] ?? 0;
             $exports_b = $exports_before[$pid] ?? 0;
-            $opening   = max(0, $closing - $qty_in + $qty_out - $imports_b + $exports_b);
+            $opening   = max(0, $closing - $qty_in + $qty_out + $imports_b - $exports_b);
 
             $rows[] = [
                 'sku'           => $p['sku'],

@@ -74,10 +74,10 @@ class ProductsPage
                     wp_send_json_error('SKU đã tồn tại.');
                 }
             }
-            $data['current_stock'] = 0;
-            $data['avg_cost']      = 0;
-            $fmt[]                 = '%f';
-            $fmt[]                 = '%f';
+            $data['current_stock'] = '0';
+            $data['avg_cost']      = '0';
+            $fmt[]                 = '%s';
+            $fmt[]                 = '%s';
             $wpdb->insert($table, $data, $fmt);
             wp_send_json_success(['id' => $wpdb->insert_id, 'message' => 'Đã thêm sản phẩm.']);
         }

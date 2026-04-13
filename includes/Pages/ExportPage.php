@@ -3,6 +3,7 @@
 namespace HTWarehouse\Pages;
 
 use HTWarehouse\Services\CostCalculator;
+use HTWarehouse\Services\NumberHelper;
 
 defined('ABSPATH') || exit;
 
@@ -47,7 +48,7 @@ class ExportPage
                     $order_code
                 ));
                 $attempts++;
-            } while ($exists && $attempts < 5);
+            } while ($exists && $attempts < 10);
             if ($exists) {
                 wp_send_json_error('Không thể tạo mã đơn không trùng lặp. Vui lòng nhập mã đơn thủ công.');
             }
@@ -167,17 +168,19 @@ class ExportPage
         $wpdb->query('START TRANSACTION');
 
         try {
-            // Acquire row-level locks for all affected products BEFORE reading stock
-            // This prevents race condition where two concurrent confirms both see
-            // the same stock and both proceed to oversell.
+            // Acquire row-level locks for all affected products BEFORE reading stock & avg_cost.
+            // This prevents race conditions where two concurrent confirms both see
+            // the same stock/cost and both proceed to oversell or use stale avg_cost.
             $stock_check = [];
+            $cost_check = [];
             foreach ($items as $item) {
-                $pid   = (int) $item['product_id'];
-                $stock = (float) $wpdb->get_var($wpdb->prepare(
-                    "SELECT current_stock FROM {$wpdb->prefix}htw_products WHERE id = %d FOR UPDATE",
+                $pid       = (int) $item['product_id'];
+                $locked_row = $wpdb->get_row($wpdb->prepare(
+                    "SELECT current_stock, avg_cost FROM {$wpdb->prefix}htw_products WHERE id = %d FOR UPDATE",
                     $pid
-                ));
-                $stock_check[$pid] = $stock;
+                ), ARRAY_A);
+                $stock_check[$pid] = (float) $locked_row['current_stock'];
+                $cost_check[$pid]  = (float) $locked_row['avg_cost'];
 
                 if ($stock_check[$pid] < (float) $item['qty']) {
                     throw new \Exception("Không đủ hàng trong kho: {$item['product_name']} (tồn: {$stock_check[$pid]}, cần: {$item['qty']})");
@@ -188,7 +191,9 @@ class ExportPage
             $total_cogs    = 0;
 
             foreach ($items as $item) {
-                $cogs_per_unit = CostCalculator::deduct_stock((int) $item['product_id'], (float) $item['qty']);
+                $pid   = (int) $item['product_id'];
+                $qty   = (float) $item['qty'];
+                $cogs_per_unit = CostCalculator::deduct_stock($pid, $stock_check[$pid], $cost_check[$pid], $qty);
                 $revenue       = (float) $item['qty'] * (float) $item['sale_price'];
                 $cogs          = (float) $item['qty'] * $cogs_per_unit;
                 $profit        = $revenue - $cogs;
@@ -225,6 +230,34 @@ class ExportPage
             $wpdb->query('ROLLBACK');
             wp_send_json_error('Xác nhận thất bại. Vui lòng thử lại. Chi tiết: ' . $e->getMessage());
         }
+    }
+
+    // ── AJAX: Get confirmed order detail ─────────────────────────────────────
+    public static function ajax_export_detail(): void
+    {
+        check_ajax_referer('htw_nonce', 'nonce');
+        if (! current_user_can('manage_options')) wp_send_json_error('Unauthorized', 403);
+
+        global $wpdb;
+        $id = absint($_POST['id'] ?? 0);
+
+        $order = $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM {$wpdb->prefix}htw_export_orders WHERE id = %d",
+            $id
+        ), ARRAY_A);
+
+        if (! $order) wp_send_json_error('Đơn hàng không tồn tại.');
+
+        $items = $wpdb->get_results($wpdb->prepare(
+            "SELECT ei.*, p.name AS product_name
+             FROM {$wpdb->prefix}htw_export_items ei
+             JOIN {$wpdb->prefix}htw_products p ON p.id = ei.product_id
+             WHERE ei.order_id = %d",
+            $id
+        ), ARRAY_A);
+
+        $order['items'] = $items;
+        wp_send_json_success($order);
     }
 
     // ── AJAX: Delete draft order ──────────────────────────────────────────────

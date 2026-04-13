@@ -101,6 +101,13 @@
 .htw-btn-ghost:hover {
   background: var(--htw-surface-2);
 }
+.htw-btn-info {
+  background: var(--htw-info);
+  color: #fff;
+}
+.htw-btn-info:hover {
+  filter: brightness(1.1);
+}
 .htw-btn-sm {
   padding: 5px 11px;
   font-size: 0.78rem;

@@ -53,6 +53,7 @@ class Database
         $sql[] = "CREATE TABLE {$wpdb->prefix}htw_import_batches (
             id           BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
             batch_code   VARCHAR(50)     NOT NULL,
+            supplier_id  BIGINT UNSIGNED NULL DEFAULT NULL,
             supplier     VARCHAR(255)    NOT NULL DEFAULT '',
             import_date  DATE            NOT NULL,
             shipping_fee    DECIMAL(15,2)   NOT NULL DEFAULT 0,
@@ -68,7 +69,8 @@ class Database
             PRIMARY KEY (id),
             UNIQUE KEY batch_code (batch_code),
             KEY import_date (import_date),
-            KEY status (status)
+            KEY status (status),
+            KEY supplier_id (supplier_id)
         ) $charset;";
 
         $sql[] = "CREATE TABLE {$wpdb->prefix}htw_import_items (
