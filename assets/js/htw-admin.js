@@ -377,7 +377,7 @@
         downloadSample: function () {
           var bom  = '\uFEFF'; // UTF-8 BOM for Excel
           var rows = [
-            'Danh m\u1ee5c,T\u00ean s\u1ea3n ph\u1ea9m,SKU,\u0110\u01a1n v\u1ecb,Barcode,T\u1ed3n kho,Gi\u00e1 v\u1ed1n,Link s\u1ea3n ph\u1ea9m,Ghi ch\u00fa',
+            'Danh m\u1ee5c,T\u00ean s\u1ea3n ph\u1ea9m,SKU,\u0110\u01a1n v\u1ecb,Barcode,T\u1ed3n kho,Gi\u00e1 v\u1ed1n,Link \u1ea3nh,Link s\u1ea3n ph\u1ea9m,Ghi ch\u00fa',
             '\u0110\u1ed3 ch\u01a1i,Xe l\u1eeda g\u1ed7,TOY-001,c\u00e1i,,0,0,,',
             '\u0110\u1ed3 ch\u01a1i,B\u00fap b\u00ea nh\u1ed3i b\u00f4ng,TOY-002,c\u00e1i,,0,0,,',
             'V\u0103n ph\u00f2ng ph\u1ea9m,B\u00fat bi xanh,OFC-001,h\u1ed9p,,0,0,,',
@@ -1857,6 +1857,10 @@
           var pad = function (n) { return ('0' + n).slice(-2); };
           return pad(d.getDate()) + '/' + pad(d.getMonth() + 1) + '/' + d.getFullYear()
                + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+        },
+
+        fmtDate: function (dateStr) {
+          return this._fmtDt(dateStr);
         },
 
         fmtSize: function (bytes) {

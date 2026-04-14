@@ -2,6 +2,7 @@
 
 namespace HTWarehouse\Pages;
 
+use HTWarehouse\Services\ActivityLogger;
 use HTWarehouse\Services\NumberHelper;
 
 defined('ABSPATH') || exit;
@@ -185,12 +186,22 @@ class ReturnOrderPage
             wp_send_json_error('Lưu đơn trả thất bại: ' . $e->getMessage());
         }
 
+        $fetched_code = $return_data['return_code'] ?? (string) $wpdb->get_var($wpdb->prepare(
+            "SELECT return_code FROM {$return_table} WHERE id = %d", $return_id
+        ));
+
+        $is_update  = isset($_POST['return_id']) && absint($_POST['return_id'] ?? 0) > 0;
+        ActivityLogger::log(
+            $is_update ? 'update' : 'create',
+            'return_order',
+            $return_id,
+            $fetched_code,
+            ($is_update ? 'Cập nhật' : 'Tạo mới') . " đơn trả hàng {$fetched_code} cho đơn xuất #{$export_order_id}"
+        );
+
         wp_send_json_success([
             'return_id'   => $return_id,
-            'return_code' => $return_data['return_code'] ?? $wpdb->get_var($wpdb->prepare(
-                "SELECT return_code FROM {$return_table} WHERE id = %d",
-                $return_id
-            )),
+            'return_code' => $fetched_code,
             'message'     => 'Đã lưu đơn trả hàng.',
         ]);
     }
@@ -332,11 +343,23 @@ class ReturnOrderPage
 
 
             $wpdb->query('COMMIT');
-            wp_send_json_success('\u0110\u00e3 x\u00e1c nh\u1eadn \u0111\u01a1n tr\u1ea3 h\u00e0ng. T\u1ed3n kho \u0111\u00e3 \u0111\u01b0\u1ee3c ho\u00e0n l\u1ea1i.');
+
+            $ret_code = (string) $wpdb->get_var($wpdb->prepare(
+                "SELECT return_code FROM {$return_table} WHERE id = %d", $return_id
+            ));
+            ActivityLogger::log(
+                'confirm',
+                'return_order',
+                $return_id,
+                $ret_code,
+                'Xác nhận đơn trả hàng ' . $ret_code . ' — tồn kho đã được hoàn lại'
+            );
+
+            wp_send_json_success('Đã xác nhận đơn trả hàng. Tồn kho đã được hoàn lại.');
 
         } catch (\Throwable $e) {
             $wpdb->query('ROLLBACK');
-            wp_send_json_error('X\u00e1c nh\u1eadn th\u1ea5t b\u1ea1i: ' . $e->getMessage());
+            wp_send_json_error('Xác nhận thất bại: ' . $e->getMessage());
         }
     }
 
@@ -389,8 +412,15 @@ class ReturnOrderPage
         if (! $status) wp_send_json_error('Đơn trả không tồn tại.');
         if ('confirmed' === $status) wp_send_json_error('Không thể xoá đơn trả đã xác nhận.');
 
+        // Lấy return_code trước khi xóa
+        $return_code = (string) $wpdb->get_var($wpdb->prepare(
+            "SELECT return_code FROM {$wpdb->prefix}htw_return_orders WHERE id = %d", $return_id
+        ));
+
         $wpdb->delete($wpdb->prefix . 'htw_return_items',  ['return_order_id' => $return_id], ['%d']);
         $wpdb->delete($wpdb->prefix . 'htw_return_orders', ['id'              => $return_id], ['%d']);
+
+        ActivityLogger::log('delete', 'return_order', $return_id, $return_code, 'Xóa đơn trả hàng chờ duyệt ' . $return_code);
 
         wp_send_json_success('Đã xoá đơn trả hàng.');
     }

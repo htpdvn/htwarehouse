@@ -8,7 +8,7 @@ class Database
 {
 
     const DB_VERSION_OPTION = 'htw_db_version';
-    const DB_VERSION        = '1.3.0';
+    const DB_VERSION        = '2.0.0';
 
     public static function install(): void
     {
@@ -228,6 +228,24 @@ class Database
             KEY idx_ri_order_item (return_order_id, export_item_id),
             KEY export_item_id (export_item_id),
             KEY product_id (product_id)
+        ) $charset;";
+
+        // ── Activity log (audit trail) ──────────────────────────────────────────
+        $sql[] = "CREATE TABLE {$wpdb->prefix}htw_activity_logs (
+            id          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            user_id     BIGINT UNSIGNED NOT NULL DEFAULT 0,
+            user_login  VARCHAR(60)     NOT NULL DEFAULT '',
+            action      VARCHAR(50)     NOT NULL DEFAULT '',
+            object_type VARCHAR(50)     NOT NULL DEFAULT '',
+            object_id   BIGINT UNSIGNED NOT NULL DEFAULT 0,
+            object_code VARCHAR(100)    NOT NULL DEFAULT '',
+            summary     VARCHAR(500)    NOT NULL DEFAULT '',
+            ip_address  VARCHAR(45)     NOT NULL DEFAULT '',
+            created_at  DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            KEY created_at (created_at),
+            KEY user_id (user_id),
+            KEY object_type_id (object_type, object_id)
         ) $charset;";
 
         foreach ($sql as $query) {

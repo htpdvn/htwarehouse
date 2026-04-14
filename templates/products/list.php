@@ -36,7 +36,7 @@ $products = $wpdb->get_results("SELECT * FROM {$wpdb->prefix}htw_products ORDER 
             <div style="background:var(--htw-surface-2);border:1px solid var(--htw-border);border-radius:8px;padding:14px 16px;margin-bottom:16px;font-size:.84rem;color:var(--htw-text-muted);line-height:1.7;">
                 <strong style="color:var(--htw-text);">Định dạng tệp CSV hỗ trợ:</strong><br>
                 Cột bắt buộc: <code>Danh mục</code>, <code>Tên sản phẩm</code>, <code>SKU</code><br>
-                Cột tuỳ chọn: <code>Đơn vị</code>, <code>Barcode</code>, <code>Link sản phẩm</code>, <code>Ghi chú</code><br>
+                Cột tuỳ chọn: <code>Đơn vị</code>, <code>Barcode</code>, <code>Link ảnh</code>, <code>Link sản phẩm</code>, <code>Ghi chú</code><br>
                 <span style="color:var(--htw-warning,#f59e0b);">⚠</span> Cột <strong>Tồn kho</strong> và <strong>Giá vốn</strong> bị <strong>bỏ qua hoàn toàn</strong> — dữ liệu tồn kho chỉ được cập nhật qua nghiệp vụ nhập/xuất kho.<br>
                 • File phải mã hoá <strong>UTF-8</strong> (Excel: <em>Lưu dưới dạng CSV UTF-8</em>)
                 <br><br>

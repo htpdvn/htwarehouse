@@ -2,6 +2,7 @@
 
 namespace HTWarehouse\Pages;
 
+use HTWarehouse\Services\ActivityLogger;
 use HTWarehouse\Services\CostCalculator;
 use HTWarehouse\Services\NumberHelper;
 
@@ -145,6 +146,17 @@ class ImportPage
             wp_send_json_error('Lưu lô hàng thất bại: ' . $e->getMessage());
         }
 
+        $is_update = isset($_POST['id']) && absint($_POST['id']) > 0;
+        $log_action = $is_update ? 'update' : 'create';
+        $log_verb   = $is_update ? 'Cập nhật' : 'Tạo mới';
+        ActivityLogger::log(
+            $log_action,
+            'import_batch',
+            $id,
+            $batch_code,
+            "{$log_verb} lô nhập kho {$batch_code} (". count($items) ." sản phẩm)"
+        );
+
         wp_send_json_success(['id' => $id, 'batch_code' => $batch_code, 'message' => 'Đã lưu lô hàng.']);
     }
 
@@ -246,6 +258,15 @@ class ImportPage
             }
 
             $wpdb->query('COMMIT');
+
+            ActivityLogger::log(
+                'confirm',
+                'import_batch',
+                $id,
+                $batch->batch_code,
+                'Xác nhận lô nhập kho ' . $batch->batch_code . ' (' . count($items) . ' sản phẩm) — tồn kho & WAC đã cập nhật'
+            );
+
             wp_send_json_success('Lô hàng đã được xác nhận. Kho hàng đã được cập nhật.');
         } catch (\Throwable $e) {
             $wpdb->query('ROLLBACK');
@@ -267,8 +288,15 @@ class ImportPage
             wp_send_json_error('Không thể xoá lô hàng đã xác nhận lưu kho.');
         }
 
+        // Lấy batch_code trước khi xóa
+        $batch_code = (string) $wpdb->get_var($wpdb->prepare(
+            "SELECT batch_code FROM {$wpdb->prefix}htw_import_batches WHERE id = %d", $id
+        ));
+
         $wpdb->delete($wpdb->prefix . 'htw_import_items',   ['batch_id' => $id], ['%d']);
         $wpdb->delete($wpdb->prefix . 'htw_import_batches', ['id' => $id],        ['%d']);
+
+        ActivityLogger::log('delete', 'import_batch', $id, $batch_code, 'Xóa lô nhập kho nháp ' . $batch_code);
 
         wp_send_json_success('Đã xoá lô hàng.');
     }

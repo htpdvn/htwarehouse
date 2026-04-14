@@ -2,6 +2,8 @@
 
 namespace HTWarehouse\Pages;
 
+use HTWarehouse\Services\ActivityLogger;
+
 defined('ABSPATH') || exit;
 
 class SuppliersPage
@@ -46,13 +48,16 @@ class SuppliersPage
             if ($updated === false) {
                 wp_send_json_error('Lỗi cập nhật: ' . $wpdb->last_error);
             }
+            ActivityLogger::log('update', 'supplier', $id, $name, 'Cập nhật nhà cung cấp: ' . $name);
             wp_send_json_success(['message' => 'Đã cập nhật nhà cung cấp.']);
         } else {
             $inserted = $wpdb->insert($table, $data, $fmt);
             if ($inserted === false) {
                 wp_send_json_error('Lỗi thêm mới: ' . $wpdb->last_error);
             }
-            wp_send_json_success(['id' => $wpdb->insert_id, 'message' => 'Đã thêm nhà cung cấp.']);
+            $new_id = $wpdb->insert_id;
+            ActivityLogger::log('create', 'supplier', $new_id, $name, 'Tạo mới nhà cung cấp: ' . $name);
+            wp_send_json_success(['id' => $new_id, 'message' => 'Đã thêm nhà cung cấp.']);
         }
     }
 
@@ -84,6 +89,7 @@ class SuppliersPage
         if ($deleted === false) {
             wp_send_json_error('Lỗi xoá: ' . $wpdb->last_error);
         }
+        ActivityLogger::log('delete', 'supplier', $id, '', 'Xóa nhà cung cấp ID=' . $id);
         wp_send_json_success(['message' => 'Đã xoá nhà cung cấp.']);
     }
 

@@ -2,6 +2,7 @@
 
 namespace HTWarehouse\Pages;
 
+use HTWarehouse\Services\ActivityLogger;
 use HTWarehouse\Services\NumberHelper;
 
 defined('ABSPATH') || exit;
@@ -174,6 +175,16 @@ class PurchaseOrderPage
             wp_send_json_error('Lưu đơn hàng thất bại: ' . $e->getMessage());
         }
 
+        $log_action = ($id > 0 && isset($_POST['id']) && absint($_POST['id']) > 0) ? 'update' : 'create';
+        $log_verb   = $log_action === 'update' ? 'Cập nhật' : 'Tạo mới';
+        ActivityLogger::log(
+            $log_action,
+            'purchase_order',
+            $id,
+            $po_code,
+            "{$log_verb} đơn đặt hàng {$po_code} — NCC: {$supplier_name}, tổng: " . number_format($total_amount, 0, ',', '.') . " đ"
+        );
+
         wp_send_json_success(['id' => $id, 'po_code' => $po_code, 'message' => 'Đã lưu đơn đặt hàng.']);
     }
 
@@ -205,6 +216,15 @@ class PurchaseOrderPage
         }
 
         $wpdb->update($wpdb->prefix . 'htw_purchase_orders', ['status' => 'confirmed'], ['id' => $id]);
+
+        ActivityLogger::log(
+            'confirm',
+            'purchase_order',
+            $id,
+            $po->po_code,
+            'Gửi đơn đặt hàng ' . $po->po_code . ' đến nhà cung cấp'
+        );
+
         wp_send_json_success('Đơn đặt hàng đã được gửi đến nhà cung cấp.');
     }
 
@@ -303,6 +323,14 @@ class PurchaseOrderPage
             wp_send_json_error('Tạo lô nhập thất bại: ' . $e->getMessage());
         }
 
+        ActivityLogger::log(
+            'send_to_import',
+            'purchase_order',
+            $id,
+            $po->po_code,
+            'Chuyển đơn đặt hàng ' . $po->po_code . ' sang nhập kho — lô: ' . $batch_code
+        );
+
         wp_send_json_success([
             'id'         => $batch_id,
             'batch_code' => $batch_code,
@@ -370,6 +398,14 @@ class PurchaseOrderPage
             $msg .= ' Còn nợ: ' . number_format($new_remaining, 0, ',', '.') . ' đ.';
         }
 
+        ActivityLogger::log(
+            'create',
+            'po_payment',
+            $id,
+            $po->po_code,
+            'Ghi nhận thanh toán ' . number_format($amount, 0, ',', '.') . ' đ cho đơn ' . $po->po_code . ' (' . $payment_date . ')'
+        );
+
         wp_send_json_success([
             'message'          => $msg,
             'amount_paid'      => $new_paid,
@@ -409,9 +445,22 @@ class PurchaseOrderPage
             $wpdb->delete($wpdb->prefix . 'htw_import_batches', ['id' => $po->import_batch_id]);
         }
 
+        // Lấy thông tin PO trước khi xóa để ghi log
+        $po_info = $wpdb->get_row($wpdb->prepare(
+            "SELECT po_code FROM {$wpdb->prefix}htw_purchase_orders WHERE id = %d", $id
+        ));
+
         $wpdb->delete($wpdb->prefix . 'htw_po_payments',          ['po_id' => $id], ['%d']);
         $wpdb->delete($wpdb->prefix . 'htw_purchase_order_items', ['po_id' => $id], ['%d']);
         $wpdb->delete($wpdb->prefix . 'htw_purchase_orders',        ['id' => $id],   ['%d']);
+
+        ActivityLogger::log(
+            'delete',
+            'purchase_order',
+            $id,
+            $po_info->po_code ?? '',
+            'Xóa đơn đặt hàng ' . ($po_info->po_code ?? 'ID=' . $id)
+        );
 
         wp_send_json_success('Đã xóa đơn đặt hàng.');
     }
@@ -480,6 +529,14 @@ class PurchaseOrderPage
             'status'           => $new_status,
         ], ['id' => $payment->po_id]);
 
+        ActivityLogger::log(
+            'update',
+            'po_payment',
+            $payment->po_id,
+            $po->po_code ?? '',
+            'Sửa thanh toán cho đơn ' . ($po->po_code ?? 'ID=' . $payment->po_id) . ': ' . number_format((float)$payment->amount, 0, ',', '.') . ' đ → ' . number_format($amount, 0, ',', '.') . ' đ'
+        );
+
         wp_send_json_success([
             'message'          => 'Đã cập nhật thanh toán.',
             'amount_paid'      => $new_paid,
@@ -538,6 +595,14 @@ class PurchaseOrderPage
             'amount_remaining' => $new_remaining,
             'status'           => $new_status,
         ], ['id' => $payment->po_id]);
+
+        ActivityLogger::log(
+            'delete',
+            'po_payment',
+            $payment->po_id,
+            $po->po_code ?? '',
+            'Xóa thanh toán ' . number_format((float)$payment->amount, 0, ',', '.') . ' đ của đơn ' . ($po->po_code ?? 'ID=' . $payment->po_id)
+        );
 
         wp_send_json_success([
             'message'          => 'Đã xóa thanh toán.',

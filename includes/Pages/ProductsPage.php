@@ -2,6 +2,8 @@
 
 namespace HTWarehouse\Pages;
 
+use HTWarehouse\Services\ActivityLogger;
+
 defined('ABSPATH') || exit;
 
 class ProductsPage
@@ -65,6 +67,7 @@ class ProductsPage
                 }
             }
             $wpdb->update($table, $data, ['id' => $id], $fmt, ['%d']);
+            ActivityLogger::log('update', 'product', $id, $sku ?: $name, 'Cập nhật sản phẩm: ' . $name . ($sku ? ' [SKU: ' . $sku . ']' : ''));
             wp_send_json_success(['message' => 'Đã cập nhật sản phẩm.']);
         } else {
             // Check SKU uniqueness
@@ -79,7 +82,9 @@ class ProductsPage
             $fmt[]                 = '%s';
             $fmt[]                 = '%s';
             $wpdb->insert($table, $data, $fmt);
-            wp_send_json_success(['id' => $wpdb->insert_id, 'message' => 'Đã thêm sản phẩm.']);
+            $new_id = $wpdb->insert_id;
+            ActivityLogger::log('create', 'product', $new_id, $sku ?: $name, 'Tạo mới sản phẩm: ' . $name . ($sku ? ' [SKU: ' . $sku . ']' : ''));
+            wp_send_json_success(['id' => $new_id, 'message' => 'Đã thêm sản phẩm.']);
         }
     }
 
@@ -106,7 +111,19 @@ class ProductsPage
             wp_send_json_error('Không thể xoá sản phẩm còn tồn kho. Vui lòng xuất hết hàng trước.');
         }
 
+        // Lấy thông tin sản phẩm trước khi xóa
+        $product = $wpdb->get_row($wpdb->prepare(
+            "SELECT sku, name FROM {$wpdb->prefix}htw_products WHERE id = %d", $id
+        ), ARRAY_A);
+
         $wpdb->delete($wpdb->prefix . 'htw_products', ['id' => $id], ['%d']);
+
+        ActivityLogger::log(
+            'delete', 'product', $id,
+            $product['sku'] ?? '',
+            'Xóa sản phẩm: ' . ($product['name'] ?? 'ID=' . $id) . ($product['sku'] ? ' [SKU: ' . $product['sku'] . ']' : '')
+        );
+
         wp_send_json_success('Đã xoá sản phẩm.');
     }
 
@@ -140,7 +157,7 @@ class ProductsPage
 
         // Fetch ALL products (ordered by category then name for easy reading)
         $rows = $wpdb->get_results(
-            "SELECT category, name, sku, unit, barcode, current_stock, avg_cost, product_url, notes
+            "SELECT category, name, sku, unit, barcode, current_stock, avg_cost, image_url, product_url, notes
              FROM {$table}
              ORDER BY category ASC, name ASC",
             ARRAY_A
@@ -173,6 +190,7 @@ class ProductsPage
             'Barcode',
             'Tồn kho',
             'Giá vốn',
+            'Link ảnh',
             'Link sản phẩm',
             'Ghi chú',
         ]);
@@ -186,6 +204,7 @@ class ProductsPage
                 $row['barcode'],
                 $row['current_stock'],
                 $row['avg_cost'],
+                $row['image_url'],
                 $row['product_url'],
                 $row['notes'],
             ]);
@@ -269,6 +288,7 @@ class ProductsPage
             // Optional columns
             $unit_idx    = $header_map['đơn vị']        ?? $header_map['unit']        ?? null;
             $barcode_idx = $header_map['barcode']       ?? null;
+            $img_idx     = $header_map['link ảnh']      ?? $header_map['image_url']   ?? null;
             $url_idx     = $header_map['link sản phẩm'] ?? $header_map['product_url'] ?? null;
             $notes_idx   = $header_map['ghi chú']       ?? $header_map['notes']       ?? null;
             // (Tồn kho / Giá vốn columns are intentionally never read)
@@ -300,6 +320,7 @@ class ProductsPage
             // Optional fields
             $unit     = $unit_idx    !== null ? (sanitize_text_field($cols[ $unit_idx ]      ?? '') ?: 'cái') : 'cái';
             $barcode  = $barcode_idx !== null ? sanitize_text_field($cols[ $barcode_idx ]    ?? '') : '';
+            $img_url  = $img_idx     !== null ? esc_url_raw($cols[ $img_idx ]                ?? '') : '';
             $prod_url = $url_idx     !== null ? esc_url_raw($cols[ $url_idx ]                ?? '') : '';
             $notes    = $notes_idx   !== null ? sanitize_textarea_field($cols[ $notes_idx ]  ?? '') : '';
 
@@ -318,11 +339,12 @@ class ProductsPage
                         'name'        => $name,
                         'unit'        => $unit,
                         'barcode'     => $barcode,
+                        'image_url'   => $img_url,
                         'product_url' => $prod_url,
                         'notes'       => $notes,
                     ],
                     ['id' => $existing_id],
-                    ['%s', '%s', '%s', '%s', '%s', '%s'],
+                    ['%s', '%s', '%s', '%s', '%s', '%s', '%s'],
                     ['%d']
                 );
             } else {
@@ -335,6 +357,7 @@ class ProductsPage
                         'category'      => $category,
                         'unit'          => $unit,
                         'barcode'       => $barcode,
+                        'image_url'     => $img_url,
                         'product_url'   => $prod_url,
                         'notes'         => $notes,
                         'current_stock' => '0',
@@ -356,6 +379,14 @@ class ProductsPage
         if (! empty($errors)) {
             $msg .= ' Lỗi: ' . implode('; ', array_slice($errors, 0, 5));
         }
+
+        ActivityLogger::log(
+            'import_csv',
+            'product',
+            0,
+            '',
+            "Import CSV sản phẩm: {$imported} mục thành công" . ($skipped > 0 ? ", {$skipped} bỏ qua" : '') . (! empty($errors) ? ', ' . count($errors) . ' lỗi' : '')
+        );
 
         wp_send_json_success(['message' => $msg, 'imported' => $imported, 'skipped' => $skipped, 'errors' => $errors]);
     }

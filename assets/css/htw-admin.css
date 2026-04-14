@@ -184,7 +184,7 @@
 .htw-kpi-value {
   font-size: 1.6rem;
   font-weight: 700;
-  margin: 6px 0;
+  margin: 10px 0;
   color: var(--htw-text);
 }
 .htw-kpi-sub {

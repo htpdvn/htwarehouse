@@ -44,10 +44,7 @@ register_activation_hook(__FILE__, function () {
 
 register_deactivation_hook(__FILE__, function () {
     \HTWarehouse\Snapshot\SnapshotScheduler::get_instance()->clear_schedule();
-});
-
-register_deactivation_hook(__FILE__, function () {
-    // No-op: no rewrite rules or transient cache to flush
+    \HTWarehouse\Services\LogPruner::deactivate();
 });
 
 // ── Composer autoloader (TCPDF) ─────────────────────────────────────────────────

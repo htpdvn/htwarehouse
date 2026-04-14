@@ -26,8 +26,8 @@ unset($o);
 $products = $wpdb->get_results("SELECT id, name, sku, unit, avg_cost, current_stock FROM {$wpdb->prefix}htw_products ORDER BY name", ARRAY_A);
 ?>
 <script>
-window._htwExports  = <?php echo wp_json_encode($orders); ?>;
-window._htwProducts = <?php echo wp_json_encode($products); ?>;
+    window._htwExports = <?php echo wp_json_encode($orders); ?>;
+    window._htwProducts = <?php echo wp_json_encode($products); ?>;
 </script>
 <div class="htw-wrap" x-data="htwExports">
 
@@ -172,18 +172,16 @@ window._htwProducts = <?php echo wp_json_encode($products); ?>;
                                 </td>
                                 <td>
                                     <input class="htw-input" type="text"
-                                           :value="fmtNum(item.qty)"
-                                           @input="item.qty = parseNum($event.target.value)"
-                                           @blur="$event.target.value = fmtNum(item.qty)"
-                                           :style="item.product_id && parseNum(item.qty) > parseFloat(item.current_stock||0) ? 'border-color:#ef4444;text-align:right;' : 'text-align:right;'"
-                                           placeholder="0">
-                                    <div x-show="item.product_id && parseNum(item.qty) > parseFloat(item.current_stock||0)" style="color:#ef4444;font-size:.75rem;white-space:nowrap;">⚠ Vượt tồn kho!</div>
+                                        x-model="item.qty"
+                                        @blur="item.qty = parseNum(String(item.qty || '')); $event.target.value = fmtNum(item.qty)"
+                                        :style="item.product_id && parseNum(String(item.qty||'')) > parseFloat(item.current_stock||0) ? 'border-color:#ef4444;text-align:right;' : 'text-align:right;'"
+                                        placeholder="0">
+                                    <div x-show="item.product_id && parseNum(String(item.qty||'')) > parseFloat(item.current_stock||0)" style="color:#ef4444;font-size:.75rem;white-space:nowrap;">⚠ Vượt tồn kho!</div>
                                 </td>
                                 <td><input class="htw-input" type="text"
-                                           :value="fmtNum(item.sale_price)"
-                                           @input="item.sale_price = parseNum($event.target.value)"
-                                           @blur="$event.target.value = fmtNum(item.sale_price)"
-                                           placeholder="0" style="text-align:right;"></td>
+                                        x-model="item.sale_price"
+                                        @blur="var el = $event.target; el.value = fmtNum(parseFloat(item.sale_price) || 0)"
+                                        placeholder="0" style="text-align:right;"></td>
                                 <td style="color:var(--htw-text-muted);font-size:.8rem;" x-text="fmt(item.avg_cost)"></td>
                                 <td x-text="fmt(item.qty * item.sale_price)"></td>
                                 <td :style="{color: (item.qty*(item.sale_price-item.avg_cost))>=0 ? '#22c55e':'#ef4444'}"
@@ -253,8 +251,8 @@ window._htwProducts = <?php echo wp_json_encode($products); ?>;
                         <div style="background:#f8f9fa;border:1px solid #e2e8f0;border-radius:8px;padding:12px;text-align:center;">
                             <div style="color:var(--htw-text-muted);font-size:.75rem;margin-bottom:4px;">LỢI NHUẬN</div>
                             <div style="font-weight:700;font-size:1.1rem;"
-                                 :style="{color: parseFloat(detailOrder.total_profit) >= 0 ? '#22c55e' : '#ef4444'}"
-                                 x-text="fmt(detailOrder.total_profit)"></div>
+                                :style="{color: parseFloat(detailOrder.total_profit) >= 0 ? '#22c55e' : '#ef4444'}"
+                                x-text="fmt(detailOrder.total_profit)"></div>
                         </div>
                     </div>
 
@@ -296,7 +294,7 @@ window._htwProducts = <?php echo wp_json_encode($products); ?>;
                                 <span class="dashicons dashicons-undo" style="vertical-align:middle;"></span>
                                 Lịch sử trả hàng (<span x-text="detailReturns.length"></span> đơn)
                             </div>
-                    <template x-for="ro in detailReturns" :key="ro.id">
+                            <template x-for="ro in detailReturns" :key="ro.id">
                                 <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:12px;margin-bottom:10px;">
                                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px;">
                                         <div>
@@ -306,12 +304,12 @@ window._htwProducts = <?php echo wp_json_encode($products); ?>;
                                         </div>
                                         <div style="display:flex;gap:6px;align-items:center;">
                                             <span :class="'htw-badge htw-badge-' + (ro.status === 'confirmed' ? 'confirmed' : 'draft')"
-                                                  x-text="ro.status === 'confirmed' ? 'Đã xác nhận' : 'Chờ xác nhận'"></span>
+                                                x-text="ro.status === 'confirmed' ? 'Đã xác nhận' : 'Chờ xác nhận'"></span>
                                             <template x-if="ro.status === 'confirmed'">
                                                 <button class="htw-btn htw-btn-ghost htw-btn-sm"
-                                                        style="padding:2px 8px;font-size:.75rem;"
-                                                        @click="printReturn(ro, detailOrder)"
-                                                        title="In phiếu trả hàng">
+                                                    style="padding:2px 8px;font-size:.75rem;"
+                                                    @click="printReturn(ro, detailOrder)"
+                                                    title="In phiếu trả hàng">
                                                     🖨 In phiếu
                                                 </button>
                                             </template>
@@ -374,7 +372,7 @@ window._htwProducts = <?php echo wp_json_encode($products); ?>;
     <!-- ── Return Order Modal ─────────────────────────────────────────────── -->
     <div class="htw-modal-overlay" x-show="returnModal" x-cloak @click.self="returnModal=false">
         <div class="htw-modal" style="max-width:820px;" @click.stop>
-            <div class="htw-modal-title" style="background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;border-radius:8px 8px 0 0;padding:16px 20px;margin:-20px -20px 20px;">
+            <div class="htw-modal-title" style="background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;border-radius:8px 8px 0 0;padding:16px 20px;margin:-30px -32px 20px;">
                 <span class="dashicons dashicons-undo" style="font-size:20px;width:20px;height:20px;"></span>
                 <span>Tạo đơn trả hàng</span>
                 <span x-show="returnForm.export_order_code" style="font-weight:400;font-size:.9rem;" x-text="' — ' + returnForm.export_order_code"></span>
@@ -434,11 +432,11 @@ window._htwProducts = <?php echo wp_json_encode($products); ?>;
                                     <template x-if="ri.selected">
                                         <div>
                                             <input class="htw-input" type="text" style="text-align:right;min-width:80px;"
-                                                   :value="fmtNum(ri.qty_returned)"
-                                                   @input="ri.qty_returned = parseNum($event.target.value)"
-                                                   @blur="$event.target.value = fmtNum(ri.qty_returned)"
-                                                   :max="ri.max_returnable"
-                                                   placeholder="0">
+                                                :value="fmtNum(ri.qty_returned)"
+                                                @input="ri.qty_returned = parseNum($event.target.value)"
+                                                @blur="$event.target.value = fmtNum(ri.qty_returned)"
+                                                :max="ri.max_returnable"
+                                                placeholder="0">
                                             <div x-show="parseFloat(ri.qty_returned) > parseFloat(ri.max_returnable)" style="color:#ef4444;font-size:.75rem;white-space:nowrap;">⚠ Vượt giới hạn!</div>
                                         </div>
                                     </template>
@@ -468,7 +466,7 @@ window._htwProducts = <?php echo wp_json_encode($products); ?>;
                 <div style="display:flex;gap:20px;flex-wrap:wrap;">
                     <span>Doanh thu giảm: <strong style="color:#ef4444;" x-text="fmt(returnTotalRefund)"></strong></span>
                     <span>Giá vốn giảm: <strong style="color:#22c55e;" x-text="fmt(returnTotalCogs)"></strong></span>
-                    <span>Tồn kho +: <strong x-text="fmtNum(returnTotalQty) + ' SP'"></strong></span>
+                    <span>Tồn kho tăng: <strong x-text="fmtNum(returnTotalQty) + ' SP'"></strong></span>
                 </div>
             </div>
 

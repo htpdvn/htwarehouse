@@ -3,6 +3,8 @@
 namespace HTWarehouse;
 
 use HTWarehouse\Pages\SnapshotPage;
+use HTWarehouse\Pages\ActivityLogPage;
+use HTWarehouse\Services\LogPruner;
 use HTWarehouse\Snapshot\SnapshotScheduler;
 
 defined('ABSPATH') || exit;
@@ -23,6 +25,7 @@ class Admin
     public function init(): void
     {
         add_action('admin_menu',            [$this, 'register_menus']);
+        add_action('admin_head',             [$this, 'render_menu_separator_css']);
         add_action('admin_enqueue_scripts', [$this, 'enqueue_assets']);
         add_filter('script_loader_tag',      [$this, 'add_sri_attributes'], 10, 2);
 
@@ -63,8 +66,16 @@ class Admin
         add_action('wp_ajax_htw_snapshot_delete',    [SnapshotPage::class, 'ajax_delete']);
         add_action('wp_ajax_htw_snapshot_status',   [SnapshotPage::class, 'ajax_get_status']);
 
+        // Activity log AJAX
+        add_action('wp_ajax_htw_activity_log_data',   [ActivityLogPage::class, 'ajax_get_logs']);
+        add_action('wp_ajax_htw_export_activity_log', [ActivityLogPage::class, 'ajax_export_csv']);
+        add_action('wp_ajax_htw_log_prune_now',       [$this, 'ajax_prune_logs_now']);
+
         // Ensure daily snapshot cron is scheduled when admin loads
         SnapshotScheduler::get_instance()->register_hooks();
+
+        // Ensure daily log pruner cron is scheduled
+        LogPruner::get_instance()->register_hooks();
     }
 
     /**
@@ -109,12 +120,40 @@ class Admin
 
         add_submenu_page('htwarehouse', 'Dashboard',      'Dashboard',       'manage_options', 'htwarehouse',           [Pages\DashboardPage::class, 'render']);
         add_submenu_page('htwarehouse', 'Sản phẩm',       'Sản phẩm',        'manage_options', 'htw-products',          [Pages\ProductsPage::class,  'render']);
-        add_submenu_page('htwarehouse', 'Nhà cung cấp',   'Nhà cung cấp',    'manage_options', 'htw-suppliers',         [Pages\SuppliersPage::class, 'render']);
+        add_submenu_page('htwarehouse', 'Nhà cung cấp',   'Nhà cung cấp (NCC)',    'manage_options', 'htw-suppliers',         [Pages\SuppliersPage::class, 'render']);
+        add_submenu_page('htwarehouse', '',   '',                  'manage_options', 'htw-separator-2',       '__return_null');
+        add_submenu_page('htwarehouse', 'Đặt hàng NCC',   'Đặt hàng NCC',        'manage_options', 'htw-purchase-orders',   [Pages\PurchaseOrderPage::class, 'render']);
         add_submenu_page('htwarehouse', 'Nhập kho',       'Nhập kho',        'manage_options', 'htw-imports',           [Pages\ImportPage::class,    'render']);
-        add_submenu_page('htwarehouse', 'Xuất kho / Bán', 'Xuất kho / Bán',  'manage_options', 'htw-exports',           [Pages\ExportPage::class,    'render']);
-        add_submenu_page('htwarehouse', 'Đặt hàng',       'Đặt hàng',        'manage_options', 'htw-purchase-orders',   [Pages\PurchaseOrderPage::class, 'render']);
+        add_submenu_page('htwarehouse', 'Bán', 'Xuất kho / Xuất bán',  'manage_options', 'htw-exports',           [Pages\ExportPage::class,    'render']);
+        add_submenu_page('htwarehouse', '',   '',                  'manage_options', 'htw-separator-1',       '__return_null');
         add_submenu_page('htwarehouse', 'Báo cáo',        'Báo cáo',         'manage_options', 'htw-reports',           [Pages\ReportsPage::class,   'render']);
         add_submenu_page('htwarehouse', 'Sao lưu',        'Sao lưu',         'manage_options', 'htw-snapshots',         [SnapshotPage::class,        'render']);
+        add_submenu_page('htwarehouse', 'Nhật ký',        'Nhật ký',         'manage_options', 'htw-activity-log',      [ActivityLogPage::class,     'render']);
+    }
+
+    public function render_menu_separator_css(): void
+    {
+?>
+        <style>
+            #adminmenu a[href$="page=htw-separator-1"],
+            #adminmenu a[href$="page=htw-separator-2"] {
+                display: block;
+                height: 0 !important;
+                padding: 0 !important;
+                margin: 6px 12px !important;
+                border-top: 1px solid rgba(255, 255, 255, 0.15) !important;
+                pointer-events: none !important;
+                cursor: default !important;
+                overflow: hidden;
+            }
+
+            #adminmenu li:has(a[href$="page=htw-separator-1"]),
+            #adminmenu li:has(a[href$="page=htw-separator-2"]) {
+                margin: 0 !important;
+                padding: 0 !important;
+            }
+        </style>
+<?php
     }
 
     public function enqueue_assets(string $hook): void
@@ -128,6 +167,7 @@ class Admin
             'htwarehouse_page_htw-reports',
             'htwarehouse_page_htw-purchase-orders',
             'htwarehouse_page_htw-snapshots',
+            'htwarehouse_page_htw-activity-log',
         ];
 
         if (! in_array($hook, $htw_pages, true)) {
@@ -154,6 +194,31 @@ class Admin
             'ajaxUrl' => admin_url('admin-ajax.php'),
             'nonce'   => wp_create_nonce('htw_nonce'),
             'currencySymbol' => 'đ',
+        ]);
+        // Alias for pages that use htwAdmin.ajaxUrl / htwAdmin.nonce (e.g. activity log)
+        wp_localize_script('htw-admin', 'htwAdmin', [
+            'ajaxUrl'      => admin_url('admin-ajax.php'),
+            'nonce'        => wp_create_nonce('htw_nonce'),
+            'logMaxDays'   => \HTWarehouse\Services\LogPruner::MAX_AGE_DAYS,
+            'logMaxRows'   => \HTWarehouse\Services\LogPruner::MAX_ROWS,
+        ]);
+    }
+
+    // ── AJAX: Manual log pruning trigger ───────────────────────────────────────
+    public function ajax_prune_logs_now(): void
+    {
+        check_ajax_referer('htw_nonce', 'nonce');
+        if (! current_user_can('manage_options')) wp_send_json_error('Unauthorized', 403);
+
+        $result = \HTWarehouse\Services\LogPruner::run_now();
+
+        wp_send_json_success([
+            'deleted' => $result['deleted'],
+            'before'  => $result['before'],
+            'after'   => $result['after'],
+            'message' => $result['deleted'] > 0
+                ? "Đã xóa {$result['deleted']} bản ghi. Hiện còn {$result['after']} bản ghi."
+                : "Không có bản ghi nào cần xóa. Tổng: {$result['after']} bản ghi.",
         ]);
     }
 }

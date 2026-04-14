@@ -2,6 +2,7 @@
 
 namespace HTWarehouse\Pages;
 
+use HTWarehouse\Services\ActivityLogger;
 use HTWarehouse\Services\CostCalculator;
 use HTWarehouse\Services\NumberHelper;
 
@@ -159,6 +160,17 @@ class ExportPage
             wp_send_json_error('Lưu đơn hàng thất bại: ' . $e->getMessage());
         }
 
+        $is_update  = isset($_POST['id']) && absint($_POST['id']) > 0;
+        $log_action = $is_update ? 'update' : 'create';
+        $log_verb   = $is_update ? 'Cập nhật' : 'Tạo mới';
+        ActivityLogger::log(
+            $log_action,
+            'export_order',
+            $id,
+            $order_code,
+            "{$log_verb} đơn xuất kho {$order_code} (" . count($items) . " sản phẩm)"
+        );
+
         wp_send_json_success(['id' => $id, 'order_code' => $order_code, 'message' => 'Đã lưu đơn hàng.']);
     }
 
@@ -261,6 +273,15 @@ class ExportPage
             }
 
             $wpdb->query('COMMIT');
+
+            ActivityLogger::log(
+                'confirm',
+                'export_order',
+                $id,
+                $order->order_code,
+                'Xác nhận đơn xuất kho ' . $order->order_code . ' (' . count($items) . ' sản phẩm) — tồn kho đã trừ'
+            );
+
             wp_send_json_success('Đơn hàng đã xác nhận. Kho hàng đã được trừ.');
 
         } catch (\Throwable $e) {
@@ -311,8 +332,14 @@ class ExportPage
             wp_send_json_error('Không thể xoá đơn hàng đã xác nhận.');
         }
 
+        $order_code = (string) $wpdb->get_var($wpdb->prepare(
+            "SELECT order_code FROM {$wpdb->prefix}htw_export_orders WHERE id = %d", $id
+        ));
+
         $wpdb->delete($wpdb->prefix . 'htw_export_items',  ['order_id' => $id], ['%d']);
         $wpdb->delete($wpdb->prefix . 'htw_export_orders', ['id' => $id],        ['%d']);
+
+        ActivityLogger::log('delete', 'export_order', $id, $order_code, 'Xóa đơn xuất kho nháp ' . $order_code);
 
         wp_send_json_success('Đã xoá đơn hàng.');
     }
