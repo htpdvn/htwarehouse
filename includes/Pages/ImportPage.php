@@ -112,22 +112,37 @@ class ImportPage
             if ('confirmed' === $status) {
                 wp_send_json_error('Không thể sửa lô hàng đã xác nhận lưu kho.');
             }
-            $wpdb->update($batch_table, $batch_data, ['id' => $id]);
-            $wpdb->delete($items_table, ['batch_id' => $id]);
-        } else {
-            $wpdb->insert($batch_table, $batch_data);
-            $id = $wpdb->insert_id;
         }
 
-        // Insert items (no cost allocation yet — happens on confirm)
-        foreach ($items as $item) {
-            $wpdb->insert($items_table, [
-                'batch_id'   => $id,
-                'product_id' => $item['product_id'],
-                'qty'        => $item['qty'],
-                'unit_price' => $item['unit_price'],
-                'total_cost' => $item['qty'] * $item['unit_price'],
-            ]);
+        // Wrap all writes in a transaction so a crash between DELETE-items and
+        // INSERT-items cannot leave the batch in a broken (empty-items) state.
+        $wpdb->query('START TRANSACTION');
+        try {
+            if ($id > 0) {
+                $wpdb->update($batch_table, $batch_data, ['id' => $id]);
+                $wpdb->delete($items_table, ['batch_id' => $id]);
+            } else {
+                $wpdb->insert($batch_table, $batch_data);
+                $id = $wpdb->insert_id;
+                if (! $id) throw new \Exception('Không thể tạo lô hàng.');
+            }
+
+            // Insert items (no cost allocation yet — happens on confirm)
+            foreach ($items as $item) {
+                $inserted = $wpdb->insert($items_table, [
+                    'batch_id'   => $id,
+                    'product_id' => $item['product_id'],
+                    'qty'        => $item['qty'],
+                    'unit_price' => $item['unit_price'],
+                    'total_cost' => $item['qty'] * $item['unit_price'],
+                ]);
+                if ($inserted === false) throw new \Exception('Không thể lưu sản phẩm vào lô.');
+            }
+
+            $wpdb->query('COMMIT');
+        } catch (\Throwable $e) {
+            $wpdb->query('ROLLBACK');
+            wp_send_json_error('Lưu lô hàng thất bại: ' . $e->getMessage());
         }
 
         wp_send_json_success(['id' => $id, 'batch_code' => $batch_code, 'message' => 'Đã lưu lô hàng.']);

@@ -30,14 +30,21 @@ class Admin
         add_action('wp_ajax_htw_save_product',            [Pages\ProductsPage::class, 'ajax_save']);
         add_action('wp_ajax_htw_delete_product',          [Pages\ProductsPage::class, 'ajax_delete']);
         add_action('wp_ajax_htw_get_product_categories',  [Pages\ProductsPage::class, 'ajax_get_categories']);
+        add_action('wp_ajax_htw_export_categories',        [Pages\ProductsPage::class, 'ajax_export_categories']);
+        add_action('wp_ajax_htw_import_categories',        [Pages\ProductsPage::class, 'ajax_import_categories']);
         add_action('wp_ajax_htw_save_import',        [Pages\ImportPage::class,   'ajax_save']);
         add_action('wp_ajax_htw_delete_import',      [Pages\ImportPage::class,   'ajax_delete']);
         add_action('wp_ajax_htw_confirm_import',     [Pages\ImportPage::class,   'ajax_confirm']);
         add_action('wp_ajax_htw_save_export',        [Pages\ExportPage::class,   'ajax_save']);
         add_action('wp_ajax_htw_delete_export',      [Pages\ExportPage::class,   'ajax_delete']);
         add_action('wp_ajax_htw_confirm_export',     [Pages\ExportPage::class,   'ajax_confirm']);
-        add_action('wp_ajax_htw_export_detail',      [Pages\ExportPage::class,   'ajax_export_detail']);
+        add_action('wp_ajax_htw_export_detail',      [Pages\ExportPage::class,       'ajax_export_detail']);
+        add_action('wp_ajax_htw_save_return',        [Pages\ReturnOrderPage::class,   'ajax_save_return']);
+        add_action('wp_ajax_htw_confirm_return',     [Pages\ReturnOrderPage::class,   'ajax_confirm_return']);
+        add_action('wp_ajax_htw_return_list',        [Pages\ReturnOrderPage::class,   'ajax_return_list']);
+        add_action('wp_ajax_htw_delete_return',      [Pages\ReturnOrderPage::class,   'ajax_delete_return']);
         add_action('wp_ajax_htw_report_data',        [Pages\ReportsPage::class,      'ajax_data']);
+        add_action('wp_ajax_htw_export_pdf',           [Pages\ReportsPage::class,      'ajax_export_pdf']);
         add_action('wp_ajax_htw_dashboard_data',    [Pages\DashboardPage::class,   'ajax_data']);
         add_action('wp_ajax_htw_save_po',             [Pages\PurchaseOrderPage::class, 'ajax_save']);
         add_action('wp_ajax_htw_confirm_po',         [Pages\PurchaseOrderPage::class, 'ajax_confirm']);
@@ -127,8 +134,8 @@ class Admin
             return;
         }
 
-        // Chart.js
-        wp_enqueue_script('chartjs', 'https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js', [], '4.4.2', true);
+        // Chart.js — served locally to avoid CDN blocking issues
+        wp_enqueue_script('chartjs', HTW_PLUGIN_URL . 'assets/js/chart.umd.min.js', [], '4.4.2', true);
 
         // WP Media uploader
         wp_enqueue_media();
@@ -136,11 +143,12 @@ class Admin
         // Plugin assets — load BEFORE Alpine so component factories are registered before Alpine processes x-data.
         // Alpine runs after all deferred scripts, so htw-admin (defer) executes before alpinejs (also defer).
         wp_enqueue_style('htw-admin', HTW_PLUGIN_URL . 'assets/css/htw-admin.css', [], HTW_VERSION);
-        wp_enqueue_script('htw-admin', HTW_PLUGIN_URL . 'assets/js/htw-admin.js', ['jquery'], HTW_VERSION, true);
+        wp_enqueue_script('htw-admin', HTW_PLUGIN_URL . 'assets/js/htw-admin.js', ['jquery', 'chartjs'], HTW_VERSION, true);
 
-        // Alpine.js — pinned to a specific stable version to avoid unexpected breaking changes
-        // from the "latest 3.x" alias. Update this version manually when you need a newer release.
-        wp_enqueue_script('alpinejs', 'https://cdn.jsdelivr.net/npm/alpinejs@3.13.5/dist/cdn.min.js', [], '3.13.5', true);
+        // Alpine.js — served locally to avoid CDN blocking issues (same reason as chart.js).
+        // Source: https://cdn.jsdelivr.net/npm/alpinejs@3.13.5/dist/cdn.min.js
+        // To update: curl -fsSL "https://cdn.jsdelivr.net/npm/alpinejs@X.Y.Z/dist/cdn.min.js" -o assets/js/alpinejs.min.js
+        wp_enqueue_script('alpinejs', HTW_PLUGIN_URL . 'assets/js/alpinejs.min.js', [], '3.13.5', true);
 
         wp_localize_script('htw-admin', 'HTW', [
             'ajaxUrl' => admin_url('admin-ajax.php'),

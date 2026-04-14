@@ -13,7 +13,7 @@
 defined('ABSPATH') || exit;
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-define('HTW_VERSION',    '1.0.2');
+define('HTW_VERSION',    '1.0.3');
 define('HTW_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('HTW_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('HTW_PLUGIN_FILE', __FILE__);
@@ -49,6 +49,12 @@ register_deactivation_hook(__FILE__, function () {
 register_deactivation_hook(__FILE__, function () {
     // No-op: no rewrite rules or transient cache to flush
 });
+
+// ── Composer autoloader (TCPDF) ─────────────────────────────────────────────────
+require_once __DIR__ . '/vendor/autoload.php';
+if (!class_exists('TCPDF')) {
+    require_once __DIR__ . '/vendor/tecnickcom/tcpdf/tcpdf.php';
+}
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 add_action('plugins_loaded', function () {

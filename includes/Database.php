@@ -8,7 +8,7 @@ class Database
 {
 
     const DB_VERSION_OPTION = 'htw_db_version';
-    const DB_VERSION        = '1.2.0';
+    const DB_VERSION        = '1.3.0';
 
     public static function install(): void
     {
@@ -97,7 +97,7 @@ class Database
             total_revenue  DECIMAL(15,2)   NOT NULL DEFAULT 0,
             total_cogs     DECIMAL(15,2)   NOT NULL DEFAULT 0,
             total_profit   DECIMAL(15,2)   NOT NULL DEFAULT 0,
-            status         ENUM('draft','confirmed') NOT NULL DEFAULT 'draft',
+            status         ENUM('draft','confirmed','partial_return','fully_returned') NOT NULL DEFAULT 'draft',
             created_at     DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at     DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
@@ -194,8 +194,56 @@ class Database
             KEY po_id (po_id)
         ) $charset;";
 
+        // ── Return orders (hàng trả lại) ───────────────────────────────────────
+        $sql[] = "CREATE TABLE {$wpdb->prefix}htw_return_orders (
+            id               BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            return_code      VARCHAR(50)     NOT NULL,
+            export_order_id  BIGINT UNSIGNED NOT NULL,
+            return_date      DATE            NOT NULL,
+            reason           VARCHAR(255)    NOT NULL DEFAULT '',
+            notes            TEXT            NOT NULL DEFAULT '',
+            total_qty        DECIMAL(15,3)   NOT NULL DEFAULT 0,
+            total_refund     DECIMAL(15,2)   NOT NULL DEFAULT 0,
+            total_cogs_back  DECIMAL(15,2)   NOT NULL DEFAULT 0,
+            status           ENUM('pending','confirmed') NOT NULL DEFAULT 'pending',
+            created_at       DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at       DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            UNIQUE KEY return_code (return_code),
+            KEY export_order_id (export_order_id),
+            KEY status (status)
+        ) $charset;";
+
+        $sql[] = "CREATE TABLE {$wpdb->prefix}htw_return_items (
+            id               BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            return_order_id  BIGINT UNSIGNED NOT NULL,
+            export_item_id   BIGINT UNSIGNED NOT NULL,
+            product_id       BIGINT UNSIGNED NOT NULL,
+            qty_returned     DECIMAL(15,3)   NOT NULL DEFAULT 0,
+            sale_price       DECIMAL(15,2)   NOT NULL DEFAULT 0,
+            cogs_per_unit    DECIMAL(15,4)   NOT NULL DEFAULT 0,
+            created_at       DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            KEY return_order_id (return_order_id),
+            KEY idx_ri_order_item (return_order_id, export_item_id),
+            KEY export_item_id (export_item_id),
+            KEY product_id (product_id)
+        ) $charset;";
+
         foreach ($sql as $query) {
             dbDelta($query);
         }
+
+        // dbDelta cannot change ENUM values — run ALTER manually for existing installs
+        $wpdb->query(
+            "ALTER TABLE {$wpdb->prefix}htw_export_orders
+             MODIFY COLUMN status ENUM('draft','confirmed','partial_return','fully_returned') NOT NULL DEFAULT 'draft'"
+        );
+
+        // Add composite index for get_confirmed_returned_qty() hot path (idempotent: silently skips if exists)
+        $wpdb->query(
+            "ALTER TABLE {$wpdb->prefix}htw_return_items
+             ADD INDEX idx_ri_order_item (return_order_id, export_item_id)"
+        );
     }
 }

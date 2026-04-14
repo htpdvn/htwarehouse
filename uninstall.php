@@ -19,6 +19,8 @@ $tables = [
     $wpdb->prefix . 'htw_import_items',
     $wpdb->prefix . 'htw_export_orders',
     $wpdb->prefix . 'htw_export_items',
+    $wpdb->prefix . 'htw_return_orders',
+    $wpdb->prefix . 'htw_return_items',
     $wpdb->prefix . 'htw_purchase_orders',
     $wpdb->prefix . 'htw_purchase_order_items',
     $wpdb->prefix . 'htw_po_payments',

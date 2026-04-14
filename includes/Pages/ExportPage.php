@@ -90,59 +90,74 @@ class ExportPage
             'status'        => 'draft',
         ];
 
+        // Wrap the write operations in a transaction so that a crash between
+        // DELETE-items and INSERT-items cannot leave the order in an empty state.
         if ($id > 0) {
             $status = $wpdb->get_var($wpdb->prepare("SELECT status FROM {$orders_table} WHERE id = %d", $id));
-            if ('confirmed' === $status) {
+            if (in_array($status, ['confirmed', 'partial_return', 'fully_returned'], true)) {
                 wp_send_json_error('Không thể sửa đơn hàng đã xác nhận.');
             }
-            $wpdb->update($orders_table, $order_data, ['id' => $id]);
-            $wpdb->delete($items_table, ['order_id' => $id]);
-        } else {
-            $wpdb->insert($orders_table, $order_data);
-            $id = $wpdb->insert_id;
         }
 
-        // Grab current avg_cost for each product — only used to pre-fill the
-        // order form preview. COGS/revenue/profit are NOT stored for drafts to
-        // avoid stale data when avg_cost changes before confirm.
-        // Order totals are left at 0 until confirmed (when COGS is locked).
-        $total_revenue = '0';
-        $total_cogs    = '0';
-        $total_profit  = '0';
-        foreach ($items as $item) {
-            $avg_cost  = $wpdb->get_var($wpdb->prepare(
-                "SELECT avg_cost FROM {$wpdb->prefix}htw_products WHERE id = %d",
-                $item['product_id']
-            ));
-            $avg_str = (string) $avg_cost;
-            $qty_str = (string) $item['qty'];
-            $sp_str  = (string) $item['sale_price'];
+        $wpdb->query('START TRANSACTION');
+        try {
+            if ($id > 0) {
+                $wpdb->update($orders_table, $order_data, ['id' => $id]);
+                $wpdb->delete($items_table, ['order_id' => $id]);
+            } else {
+                $wpdb->insert($orders_table, $order_data);
+                $id = $wpdb->insert_id;
+                if (! $id) throw new \Exception('Không thể tạo đơn hàng.');
+            }
 
-            $revenue_str = NumberHelper::mul($qty_str, $sp_str);
-            $cogs_str    = NumberHelper::mul($qty_str, $avg_str);
-            $profit_str  = NumberHelper::sub($revenue_str, $cogs_str);
+            // Grab current avg_cost for each product — only used to pre-fill the
+            // order form preview. COGS/revenue/profit are NOT stored for drafts to
+            // avoid stale data when avg_cost changes before confirm.
+            // Order totals are left at 0 until confirmed (when COGS is locked).
+            $total_revenue = '0';
+            $total_cogs    = '0';
+            $total_profit  = '0';
+            foreach ($items as $item) {
+                $avg_cost = $wpdb->get_var($wpdb->prepare(
+                    "SELECT avg_cost FROM {$wpdb->prefix}htw_products WHERE id = %d",
+                    $item['product_id']
+                ));
+                $avg_str = (string) $avg_cost;
+                $qty_str = (string) $item['qty'];
+                $sp_str  = (string) $item['sale_price'];
 
-            $total_revenue = NumberHelper::add($total_revenue, $revenue_str);
-            $total_cogs    = NumberHelper::add($total_cogs, $cogs_str);
-            $total_profit  = NumberHelper::add($total_profit, $profit_str);
+                $revenue_str = NumberHelper::mul($qty_str, $sp_str);
+                $cogs_str    = NumberHelper::mul($qty_str, $avg_str);
+                $profit_str  = NumberHelper::sub($revenue_str, $cogs_str);
 
-            $wpdb->insert($items_table, [
-                'order_id'      => $id,
-                'product_id'    => $item['product_id'],
-                'qty'           => $item['qty'],
-                'sale_price'    => $item['sale_price'],
-                // cogs_per_unit, revenue, cogs, profit left NULL for drafts —
-                // they are only populated on confirm to avoid stale preview data.
-            ]);
+                $total_revenue = NumberHelper::add($total_revenue, $revenue_str);
+                $total_cogs    = NumberHelper::add($total_cogs, $cogs_str);
+                $total_profit  = NumberHelper::add($total_profit, $profit_str);
+
+                $inserted = $wpdb->insert($items_table, [
+                    'order_id'   => $id,
+                    'product_id' => $item['product_id'],
+                    'qty'        => $item['qty'],
+                    'sale_price' => $item['sale_price'],
+                    // cogs_per_unit, revenue, cogs, profit left NULL for drafts —
+                    // they are only populated on confirm to avoid stale preview data.
+                ]);
+                if ($inserted === false) throw new \Exception('Không thể lưu sản phẩm vào đơn hàng.');
+            }
+
+            // Update order totals — display-only for drafts (not locked COGS).
+            // On confirm, they are overwritten with the authoritative locked values.
+            $wpdb->update($orders_table, [
+                'total_revenue' => $total_revenue,
+                'total_cogs'    => $total_cogs,
+                'total_profit'  => $total_profit,
+            ], ['id' => $id]);
+
+            $wpdb->query('COMMIT');
+        } catch (\Throwable $e) {
+            $wpdb->query('ROLLBACK');
+            wp_send_json_error('Lưu đơn hàng thất bại: ' . $e->getMessage());
         }
-
-        // Update order totals — these are display-only for drafts (not locked COGS).
-        // On confirm, they are overwritten with the authoritative locked values.
-        $wpdb->update($orders_table, [
-            'total_revenue' => $total_revenue,
-            'total_cogs'    => $total_cogs,
-            'total_profit'  => $total_profit,
-        ], ['id' => $id]);
 
         wp_send_json_success(['id' => $id, 'order_code' => $order_code, 'message' => 'Đã lưu đơn hàng.']);
     }
@@ -160,7 +175,9 @@ class ExportPage
 
         $order = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$orders_table} WHERE id = %d", $id));
         if (! $order) wp_send_json_error('Đơn hàng không tồn tại.');
-        if ('confirmed' === $order->status) wp_send_json_error('Đơn hàng đã xác nhận rồi.');
+        if (in_array($order->status, ['confirmed', 'partial_return', 'fully_returned'], true)) {
+            wp_send_json_error('Đơn hàng đã được xác nhận, không thể xác nhận lại.');
+        }
 
         $items = $wpdb->get_results($wpdb->prepare(
             "SELECT ei.*, p.name AS product_name, p.current_stock
@@ -201,14 +218,19 @@ class ExportPage
 
             foreach ($items as $item) {
                 $pid   = (int) $item['product_id'];
-                $qty   = (float) $item['qty'];
-                $cogs_per_unit = CostCalculator::deduct_stock($pid, $stock_check[$pid], $cost_check[$pid], $qty);
-                $qty_str      = (string) $qty;
-                $sp_str       = (string) $item['sale_price'];
-                $cpu_str      = (string) $cogs_per_unit;
-                $revenue_str  = NumberHelper::mul($qty_str, $sp_str);
-                $cogs_str     = NumberHelper::mul($qty_str, $cpu_str);
-                $profit_str   = NumberHelper::sub($revenue_str, $cogs_str);
+                // Pass as string to match deduct_stock()'s bcmath-aware signature
+                $cogs_per_unit = CostCalculator::deduct_stock(
+                    $pid,
+                    (string) $stock_check[$pid],
+                    (string) $cost_check[$pid],
+                    (string) $item['qty']
+                );
+                $qty_str     = (string) $item['qty'];
+                $sp_str      = (string) $item['sale_price'];
+                $cpu_str     = (string) $cogs_per_unit;
+                $revenue_str = NumberHelper::mul($qty_str, $sp_str);
+                $cogs_str    = NumberHelper::mul($qty_str, $cpu_str);
+                $profit_str  = NumberHelper::sub($revenue_str, $cogs_str);
 
                 $updated = $wpdb->update($items_table, [
                     'cogs_per_unit' => $cogs_per_unit,
@@ -285,7 +307,7 @@ class ExportPage
         $id     = absint($_POST['id'] ?? 0);
         $status = $wpdb->get_var($wpdb->prepare("SELECT status FROM {$wpdb->prefix}htw_export_orders WHERE id = %d", $id));
 
-        if ('confirmed' === $status) {
+        if (in_array($status, ['confirmed', 'partial_return', 'fully_returned'], true)) {
             wp_send_json_error('Không thể xoá đơn hàng đã xác nhận.');
         }
 

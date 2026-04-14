@@ -52,26 +52,34 @@ class CostCalculator
     /**
      * Deduct stock when a sale order is confirmed.
      *
+     * Uses bcmath (via NumberHelper) for consistency with add_stock() — avoids
+     * float-precision loss on large quantities (>15 significant digits).
+     *
      * @param int    $product_id
-     * @param float  $locked_stock   Current stock at time of FOR UPDATE lock (read by caller).
-     * @param float  $locked_avg     avg_cost at time of FOR UPDATE lock (read by caller).
-     * @param float  $qty            Quantity to deduct.
-     * @return float The avg_cost per unit at the time of deduction.
+     * @param string $locked_stock   Current stock at time of FOR UPDATE lock (string for bcmath).
+     * @param string $locked_avg     avg_cost at time of FOR UPDATE lock (string for bcmath).
+     * @param string $qty            Quantity to deduct.
+     * @return string The avg_cost per unit at the time of deduction (WAC unchanged on deduct).
      */
-    public static function deduct_stock(int $product_id, float $locked_stock, float $locked_avg, float $qty): float
+    public static function deduct_stock(int $product_id, string $locked_stock, string $locked_avg, string $qty): string
     {
         global $wpdb;
-        $table     = $wpdb->prefix . 'htw_products';
-        $new_stock = max(0, $locked_stock - $qty);
+        $table = $wpdb->prefix . 'htw_products';
+
+        // Clamp to zero to avoid negative stock from floating-point edge cases
+        $new_stock = NumberHelper::comp($locked_stock, $qty, 4) >= 0
+            ? NumberHelper::sub($locked_stock, $qty)
+            : '0';
 
         $wpdb->update(
             $table,
             ['current_stock' => $new_stock],
             ['id' => $product_id],
-            ['%f'],
+            ['%s'],
             ['%d']
         );
 
+        // WAC (Weighted Average Cost) is unchanged on stock deduction.
         return $locked_avg;
     }
 
@@ -95,14 +103,25 @@ class CostCalculator
 
         $extra_str = (string) $extra_cost;
 
-        foreach ($items as &$item) {
+        $allocated_total = '0';
+        $last_idx        = count($items) - 1;
+
+        foreach ($items as $idx => &$item) {
             $qty        = (string) $item['qty'];
             $unit_price = (string) $item['unit_price'];
             $item_value = NumberHelper::mul($qty, $unit_price);
-            $share      = NumberHelper::comp($total_value, '0', 4) > 0
-                ? NumberHelper::div($item_value, $total_value, 6)
-                : '0';
-            $allocated  = NumberHelper::mul($extra_str, $share);
+
+            if ($idx === $last_idx) {
+                // Remainder correction: last item absorbs any rounding difference
+                // so that SUM(allocated) == extra_cost exactly.
+                $allocated = NumberHelper::sub($extra_str, $allocated_total);
+            } else {
+                $share     = NumberHelper::comp($total_value, '0', 4) > 0
+                    ? NumberHelper::div($item_value, $total_value, 6)
+                    : '0';
+                $allocated = NumberHelper::mul($extra_str, $share);
+                $allocated_total = NumberHelper::add($allocated_total, $allocated);
+            }
 
             $item['allocated_cost_per_unit'] = NumberHelper::comp($qty, '0', 4) > 0
                 ? NumberHelper::add($unit_price, NumberHelper::div($allocated, $qty, 4))
@@ -110,6 +129,7 @@ class CostCalculator
 
             $item['total_cost'] = NumberHelper::mul($qty, (string) $item['allocated_cost_per_unit']);
         }
+        unset($item);
 
         return $items;
     }

@@ -143,23 +143,35 @@ class PurchaseOrderPage
             'status'           => $new_status,
         ];
 
-        if ($id > 0) {
-            $wpdb->update($po_table, $po_data, ['id' => $id]);
-            $wpdb->delete($wpdb->prefix . 'htw_purchase_order_items', ['po_id' => $id]);
-        } else {
-            $wpdb->insert($po_table, $po_data);
-            $id = $wpdb->insert_id;
-        }
+        // Wrap all writes in a transaction: if INSERT items fails mid-loop, the
+        // header row is rolled back too, preventing an order with no items.
+        $wpdb->query('START TRANSACTION');
+        try {
+            if ($id > 0) {
+                $wpdb->update($po_table, $po_data, ['id' => $id]);
+                $wpdb->delete($wpdb->prefix . 'htw_purchase_order_items', ['po_id' => $id]);
+            } else {
+                $wpdb->insert($po_table, $po_data);
+                $id = $wpdb->insert_id;
+                if (! $id) throw new \Exception('Không thể tạo đơn đặt hàng.');
+            }
 
-        $items_table = $wpdb->prefix . 'htw_purchase_order_items';
-        foreach ($items as $item) {
-            $wpdb->insert($items_table, [
-                'po_id'      => $id,
-                'product_id' => $item['product_id'],
-                'qty'        => $item['qty'],
-                'unit_price' => $item['unit_price'],
-                'line_total' => $item['line_total'],
-            ]);
+            $items_table = $wpdb->prefix . 'htw_purchase_order_items';
+            foreach ($items as $item) {
+                $inserted = $wpdb->insert($items_table, [
+                    'po_id'      => $id,
+                    'product_id' => $item['product_id'],
+                    'qty'        => $item['qty'],
+                    'unit_price' => $item['unit_price'],
+                    'line_total' => $item['line_total'],
+                ]);
+                if ($inserted === false) throw new \Exception('Không thể lưu sản phẩm vào đơn hàng.');
+            }
+
+            $wpdb->query('COMMIT');
+        } catch (\Throwable $e) {
+            $wpdb->query('ROLLBACK');
+            wp_send_json_error('Lưu đơn hàng thất bại: ' . $e->getMessage());
         }
 
         wp_send_json_success(['id' => $id, 'po_code' => $po_code, 'message' => 'Đã lưu đơn đặt hàng.']);
@@ -258,31 +270,43 @@ class PurchaseOrderPage
             'status'        => 'draft',
         ];
 
-        $wpdb->insert($batch_table, $batch_data);
-        $batch_id = $wpdb->insert_id;
+        // Wrap all writes in a transaction: if import_items INSERT fails,
+        // the import_batch and PO status update are both rolled back.
+        $wpdb->query('START TRANSACTION');
+        try {
+            $wpdb->insert($batch_table, $batch_data);
+            $batch_id = $wpdb->insert_id;
+            if (! $batch_id) throw new \Exception('Không thể tạo lô nhập kho.');
 
-        $items_table = $wpdb->prefix . 'htw_import_items';
-        foreach ($items as $item) {
-            $wpdb->insert($items_table, [
-                'batch_id'   => $batch_id,
-                'product_id' => $item['product_id'],
-                'qty'        => $item['qty'],
-                'unit_price' => $item['unit_price'],
-                'total_cost' => $item['line_total'],
-            ]);
+            $items_table = $wpdb->prefix . 'htw_import_items';
+            foreach ($items as $item) {
+                $inserted = $wpdb->insert($items_table, [
+                    'batch_id'   => $batch_id,
+                    'product_id' => $item['product_id'],
+                    'qty'        => $item['qty'],
+                    'unit_price' => $item['unit_price'],
+                    'total_cost' => $item['line_total'],
+                ]);
+                if ($inserted === false) throw new \Exception('Không thể lưu sản phẩm vào lô.');
+            }
+
+            // Preserve existing status: keep 'paid_off' if already fully paid, otherwise set 'received'
+            $new_status = ($po->status === 'paid_off') ? 'paid_off' : 'received';
+            $wpdb->update($wpdb->prefix . 'htw_purchase_orders', [
+                'status'          => $new_status,
+                'import_batch_id' => $batch_id,
+            ], ['id' => $id]);
+
+            $wpdb->query('COMMIT');
+        } catch (\Throwable $e) {
+            $wpdb->query('ROLLBACK');
+            wp_send_json_error('Tạo lô nhập thất bại: ' . $e->getMessage());
         }
 
-        // Preserve existing status: keep 'paid_off' if already fully paid, otherwise set 'received'
-        $new_status = ($po->status === 'paid_off') ? 'paid_off' : 'received';
-        $wpdb->update($wpdb->prefix . 'htw_purchase_orders', [
-            'status'          => $new_status,
-            'import_batch_id' => $batch_id,
-        ], ['id' => $id]);
-
         wp_send_json_success([
-            'id' => $batch_id,
+            'id'         => $batch_id,
             'batch_code' => $batch_code,
-            'message' => 'Đã tạo lô nhập "' . $batch_code . '" từ đơn đặt hàng. Vui lòng vào trang Nhập kho để xác nhận.',
+            'message'    => 'Đã tạo lô nhập "' . $batch_code . '" từ đơn đặt hàng. Vui lòng vào trang Nhập kho để xác nhận.',
         ]);
     }
 
@@ -310,6 +334,16 @@ class PurchaseOrderPage
         }
         if ($po->status === 'draft') {
             wp_send_json_error('Không thể thanh toán đơn ở trạng thái nháp.');
+        }
+
+        // Guard against overpayment: reject payments exceeding the remaining balance.
+        // A 1đ tolerance handles floating-point display rounding.
+        $amount_remaining = (float) $po->amount_remaining;
+        if ($amount > $amount_remaining + 1) {
+            wp_send_json_error(
+                'Số tiền thanh toán (' . number_format($amount, 0, ',', '.') . ' đ) vượt quá số còn nợ (' . number_format($amount_remaining, 0, ',', '.') . ' đ). '
+                . 'Nếu muốn ghi nhận trả thừa, hãy điều chỉnh số tiền cho khớp số còn lại.'
+            );
         }
 
         $wpdb->insert($wpdb->prefix . 'htw_po_payments', [
@@ -412,6 +446,21 @@ class PurchaseOrderPage
             "SELECT * FROM {$wpdb->prefix}htw_purchase_orders WHERE id = %d", $payment->po_id
         ));
 
+        // Guard against overpayment when editing:
+        // remaining after edit = total - (current_paid - old_amount + new_amount)
+        //                       = total - current_paid + old_amount - new_amount
+        // Simplified: new_remaining = old_remaining + old_payment_amount - new_amount
+        // Allow 1đ tolerance for rounding.
+        if ($po) {
+            $projected_remaining = (float) $po->amount_remaining + (float) $payment->amount - $amount;
+            if ($projected_remaining < -1) {
+                wp_send_json_error(
+                    'Số tiền sửa (' . number_format($amount, 0, ',', '.') . ' đ) vượt quá số còn nợ. '
+                    . 'Số còn lại sau sửa sẽ âm (' . number_format($projected_remaining, 0, ',', '.') . ' đ).'
+                );
+            }
+        }
+
         $diff = $amount - (float) $payment->amount;
 
         $wpdb->update($wpdb->prefix . 'htw_po_payments', [
@@ -466,7 +515,23 @@ class PurchaseOrderPage
         // Recalculate from SUM of payments — authoritative source
         $new_paid      = NumberHelper::computePaidFromPayments($wpdb, $payment->po_id);
         $new_remaining = max(0, (float) $po->total_amount - $new_paid);
-        $new_status    = ($po->status === 'paid_off' && NumberHelper::isPositive(number_format($new_remaining, 2, '.', ''))) ? 'received' : $po->status;
+
+        // Status regression: determine correct status based on remaining balance.
+        // - If payment deletion causes remaining > 0:
+        //   * paid_off  → revert to pre-paid_off status:
+        //       • received, if the linked import batch is confirmed
+        //       • confirmed, otherwise (goods not yet received)
+        // - Any other current status: leave unchanged.
+        if ($po->status === 'paid_off' && $new_remaining > 0.01) {
+            // Determine whether goods have been received by checking import_batch_id
+            $has_received_batch = ! empty($po->import_batch_id) && $wpdb->get_var($wpdb->prepare(
+                "SELECT id FROM {$wpdb->prefix}htw_import_batches WHERE id = %d AND status = 'confirmed'",
+                $po->import_batch_id
+            ));
+            $new_status = $has_received_batch ? 'received' : 'confirmed';
+        } else {
+            $new_status = $po->status;
+        }
 
         $wpdb->update($wpdb->prefix . 'htw_purchase_orders', [
             'amount_paid'      => $new_paid,

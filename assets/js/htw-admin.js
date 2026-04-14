@@ -72,7 +72,48 @@
 
     channelLabel: function (ch) {
       var map = { facebook: 'Facebook', tiktok: 'TikTok', shopee: 'Shopee', other: 'Khác' };
-      return map[ch] || ch;
+      return map[ch] || ch || '—';
+    },
+
+    /**
+     * Submit a report export PDF request via a hidden iframe to receive a binary PDF.
+     * @param {string} report    stock | movement | profit_by_product | profit_by_channel
+     * @param {string} dateFrom  YYYY-MM-DD
+     * @param {string} dateTo    YYYY-MM-DD
+     */
+    exportPdf: function (report, dateFrom, dateTo) {
+      var iframeId = 'htw-pdf-download-frame';
+      var old = document.getElementById(iframeId);
+      if (old) old.parentNode.removeChild(old);
+
+      var iframe = document.createElement('iframe');
+      iframe.id = iframeId;
+      iframe.style.display = 'none';
+      document.body.appendChild(iframe);
+
+      var form = document.createElement('form');
+      form.method = 'POST';
+      form.action = this.ajaxUrl;
+      form.target = iframeId;
+
+      var fields = [
+        { name: 'action',     value: 'htw_export_pdf' },
+        { name: 'nonce',      value: this.nonce },
+        { name: 'report',     value: report },
+        { name: 'date_from',  value: dateFrom },
+        { name: 'date_to',    value: dateTo }
+      ];
+      fields.forEach(function (f) {
+        var input = document.createElement('input');
+        input.type  = 'hidden';
+        input.name  = f.name;
+        input.value = f.value;
+        form.appendChild(input);
+      });
+
+      document.body.appendChild(form);
+      iframe.onload = function () { document.body.removeChild(form); };
+      form.submit();
     }
   };
 
@@ -100,39 +141,78 @@
 
         drawChart: function (data) {
           var ctx = document.getElementById('htwRevenueChart');
-          if (!ctx || !data) return;
+          if (!ctx) return;
+
+          var wrapper = ctx.parentElement;
+
+          // Guard: Chart.js failed to load (CDN blocked / network error)
+          if (typeof Chart === 'undefined') {
+            console.warn('[HTW] Chart.js chưa được tải — biểu đồ không thể hiển thị.');
+            ctx.style.display = 'none';
+            if (!wrapper.querySelector('.htw-chart-msg')) {
+              var errMsg = document.createElement('p');
+              errMsg.className = 'htw-chart-msg';
+              errMsg.style.cssText = 'color:var(--htw-danger,#ef4444);font-size:.85rem;text-align:center;padding:60px 0;';
+              errMsg.textContent = 'Không thể tải thư viện biểu đồ. Vui lòng kiểm tra kết nối mạng.';
+              wrapper.insertBefore(errMsg, ctx);
+            }
+            return;
+          }
+
+          // Remove any previous message overlay
+          var prevMsg = wrapper.querySelector('.htw-chart-msg');
+          if (prevMsg) prevMsg.remove();
+
+          // Guard: empty data — show friendly placeholder instead of blank canvas
+          if (!data || !data.length) {
+            ctx.style.display = 'none';
+            if (!wrapper.querySelector('.htw-chart-msg')) {
+              var noDataMsg = document.createElement('p');
+              noDataMsg.className = 'htw-chart-msg';
+              noDataMsg.style.cssText = 'color:var(--htw-text-muted,#9ca3af);font-size:.85rem;text-align:center;padding:60px 0;';
+              noDataMsg.textContent = 'Chưa có dữ liệu doanh thu trong 6 tháng qua.';
+              wrapper.insertBefore(noDataMsg, ctx);
+            }
+            return;
+          }
+
+          ctx.style.display = '';
           var labels   = data.map(function (r) { return r.month; });
-          var revenues = data.map(function (r) { return parseFloat(r.revenue); });
-          var profits  = data.map(function (r) { return parseFloat(r.profit); });
+          var revenues = data.map(function (r) { return parseFloat(r.revenue) || 0; });
+          var profits  = data.map(function (r) { return parseFloat(r.profit)  || 0; });
 
           if (this.chart) this.chart.destroy();
-          this.chart = new Chart(ctx, {
-            type: 'bar',
-            data: {
-              labels: labels,
-              datasets: [
-                { label: 'Doanh thu', data: revenues, backgroundColor: 'rgba(108,99,255,0.7)', borderRadius: 6 },
-                { label: 'Lợi nhuận', data: profits,  backgroundColor: 'rgba(34,197,94,0.7)',  borderRadius: 6 }
-              ]
-            },
-            options: {
-              responsive: true,
-              plugins: {
-                legend: { labels: { color: '#6b7280' } },
-                tooltip: {
-                  callbacks: {
-                    label: function (ctx) {
-                      return ctx.dataset.label + ': ' + new Intl.NumberFormat('vi-VN').format(ctx.raw) + ' đ';
+          try {
+            this.chart = new Chart(ctx, {
+              type: 'bar',
+              data: {
+                labels: labels,
+                datasets: [
+                  { label: 'Doanh thu', data: revenues, backgroundColor: 'rgba(108,99,255,0.7)', borderRadius: 6 },
+                  { label: 'Lợi nhuận', data: profits,  backgroundColor: 'rgba(34,197,94,0.7)',  borderRadius: 6 }
+                ]
+              },
+              options: {
+                responsive: true,
+                plugins: {
+                  legend: { labels: { color: '#6b7280' } },
+                  tooltip: {
+                    callbacks: {
+                      label: function (ctx) {
+                        return ctx.dataset.label + ': ' + new Intl.NumberFormat('vi-VN').format(ctx.raw) + ' đ';
+                      }
                     }
                   }
+                },
+                scales: {
+                  x: { ticks: { color: '#6b7280' }, grid: { color: '#dde1ec' } },
+                  y: { ticks: { color: '#6b7280', callback: function(v) { return (v/1000000).toFixed(1) + 'M'; } }, grid: { color: '#dde1ec' } }
                 }
-              },
-              scales: {
-                x: { ticks: { color: '#6b7280' }, grid: { color: '#dde1ec' } },
-                y: { ticks: { color: '#6b7280', callback: function(v) { return (v/1000000).toFixed(1) + 'M'; } }, grid: { color: '#dde1ec' } }
               }
-            }
-          });
+            });
+          } catch (e) {
+            console.error('[HTW] Lỗi khởi tạo biểu đồ:', e);
+          }
         },
 
         fmt: HTWApp.fmt
@@ -148,10 +228,20 @@
         saving:     false,
         alertMsg:   '',
         alertType:  '',
+
         // ── Category combo-box state ──────────────────────────────────────
         categories:    [],   // all distinct existing categories
         catShow:       false, // dropdown visible?
         catFilter:     '',   // what user typed in the category field
+
+        // ── CSV import/export state ───────────────────────────────────────
+        exporting:      false,
+        importModal:    false,
+        importFile:     null,
+        importDragging: false,
+        importing:      false,
+        importMsg:      '',
+        importMsgType:  'success',
 
         form: {
           id: 0, sku: '', name: '', category: '', unit: 'cái',
@@ -253,7 +343,121 @@
         },
 
         fmt: HTWApp.fmt,
-        fmtNum: HTWApp.fmtNum
+        fmtNum: HTWApp.fmtNum,
+
+        // ── Export categories as CSV ──────────────────────────────────────
+        exportCategories: function () {
+          var self = this;
+          self.exporting = true;
+
+          // Use a hidden form POST so the browser triggers a file download
+          var form = document.createElement('form');
+          form.method  = 'POST';
+          form.action  = HTW.ajaxUrl;
+          form.style.display = 'none';
+
+          var fields = { action: 'htw_export_categories', nonce: HTW.nonce };
+          Object.keys(fields).forEach(function (k) {
+            var inp = document.createElement('input');
+            inp.type  = 'hidden';
+            inp.name  = k;
+            inp.value = fields[k];
+            form.appendChild(inp);
+          });
+
+          document.body.appendChild(form);
+          form.submit();
+          document.body.removeChild(form);
+
+          // Reset spinner after a short delay (download is async from server)
+          setTimeout(function () { self.exporting = false; }, 2500);
+        },
+
+        // ── Download a sample CSV file ────────────────────────────────────
+        downloadSample: function () {
+          var bom  = '\uFEFF'; // UTF-8 BOM for Excel
+          var rows = [
+            'Danh m\u1ee5c,T\u00ean s\u1ea3n ph\u1ea9m,SKU,\u0110\u01a1n v\u1ecb,Barcode,T\u1ed3n kho,Gi\u00e1 v\u1ed1n,Link s\u1ea3n ph\u1ea9m,Ghi ch\u00fa',
+            '\u0110\u1ed3 ch\u01a1i,Xe l\u1eeda g\u1ed7,TOY-001,c\u00e1i,,0,0,,',
+            '\u0110\u1ed3 ch\u01a1i,B\u00fap b\u00ea nh\u1ed3i b\u00f4ng,TOY-002,c\u00e1i,,0,0,,',
+            'V\u0103n ph\u00f2ng ph\u1ea9m,B\u00fat bi xanh,OFC-001,h\u1ed9p,,0,0,,',
+          ].join('\r\n');
+
+          var blob = new Blob([bom + rows], { type: 'text/csv;charset=utf-8;' });
+          var url  = URL.createObjectURL(blob);
+          var a    = document.createElement('a');
+          a.href     = url;
+          a.download = 'mau-danh-muc-san-pham.csv';
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        },
+
+        // ── Open import modal ─────────────────────────────────────────────
+        openImport: function () {
+          this.importFile     = null;
+          this.importDragging = false;
+          this.importing      = false;
+          this.importMsg      = '';
+          this.importMsgType  = 'success';
+          this.importModal    = true;
+        },
+
+        // ── File picker ───────────────────────────────────────────────────
+        onPickFile: function (evt) {
+          var f = evt.target.files[0];
+          if (f) { this.importFile = f; this.importMsg = ''; }
+        },
+
+        onDropFile: function (evt) {
+          this.importDragging = false;
+          var f = evt.dataTransfer && evt.dataTransfer.files[0];
+          if (f) { this.importFile = f; this.importMsg = ''; }
+        },
+
+        // ── Run the import ────────────────────────────────────────────────
+        doImport: function () {
+          var self = this;
+          if (!self.importFile) return;
+
+          self.importing  = true;
+          self.importMsg  = '';
+
+          var fd = new FormData();
+          fd.append('action',   'htw_import_categories');
+          fd.append('nonce',    HTW.nonce);
+          fd.append('csv_file', self.importFile, self.importFile.name);
+
+          var xhr = new XMLHttpRequest();
+          xhr.open('POST', HTW.ajaxUrl, true);
+          xhr.onload = function () {
+            self.importing = false;
+            try {
+              var res = JSON.parse(xhr.responseText);
+              if (res.success) {
+                self.importMsgType = 'success';
+                self.importMsg     = res.data.message || 'Nh\u1eadp th\u00e0nh c\u00f4ng.';
+                self.importFile    = null;
+                // Reload after 1.8 s so user can read the message
+                setTimeout(function () { location.reload(); }, 1800);
+              } else {
+                self.importMsgType = 'error';
+                self.importMsg     = res.data || 'C\u00f3 l\u1ed7i x\u1ea3y ra.';
+              }
+            } catch (e) {
+              self.importMsgType = 'error';
+              self.importMsg     = 'Ph\u1ea3n h\u1ed3i kh\u00f4ng h\u1ee3p l\u1ec7 t\u1eeb m\u00e1y ch\u1ee7.';
+            }
+          };
+          xhr.onerror = function () {
+            self.importing     = false;
+            self.importMsgType = 'error';
+            self.importMsg     = 'K\u1ebft n\u1ed1i th\u1ea5t b\u1ea1i. Vui l\u00f2ng th\u1eed l\u1ea1i.';
+          };
+          xhr.send(fd);
+        }
+
       };
     });
 
@@ -341,6 +545,24 @@
           this.form.items.splice(idx, 1);
         },
 
+        /**
+         * Build an <option> HTML string for each product in the dropdown.
+         * Works correctly inside Alpine x-html (no x-for in <select>).
+         */
+        productOptions: function (selectedId) {
+          var prods = this.products || [];
+          console.log('[HTW] productOptions called, products count:', prods.length, 'selectedId:', selectedId);
+          console.log('[HTW] first product:', prods[0]);
+          var opts = '<option value="">-- Chọn sản phẩm --</option>';
+          for (var i = 0; i < prods.length; i++) {
+            var p = prods[i];
+            var sel = (String(p.id) === String(selectedId)) ? ' selected' : '';
+            var stock = isNaN(parseFloat(p.current_stock)) ? 0 : parseFloat(p.current_stock);
+            opts += '<option value="' + p.id + '"' + sel + '>' + p.name + (p.sku ? ' [' + p.sku + ']' : '') + ' (tồn: ' + stock + ')</option>';
+          }
+          return opts;
+        },
+
         parseNum: function (s) {
           if (!s) return 0;
           var cleaned = String(s).replace(/\./g, '').replace(',', '.');
@@ -420,8 +642,19 @@
         modal:         false,
         detailModal:   false,
         detailOrder:   null,
+        detailReturns: [],
+        returnModal:   false,
+        returnSaving:  false,
         saving:        false,
         filterChannel: '',
+        returnForm: {
+          export_order_id:   0,
+          export_order_code: '',
+          return_date: new Date().toISOString().split('T')[0],
+          reason: '',
+          notes:  '',
+          items:  []
+        },
         form: {
           id: 0, order_code: '', channel: 'facebook',
           order_date: new Date().toISOString().split('T')[0],
@@ -469,6 +702,25 @@
 
         removeItem: function (idx) {
           this.form.items.splice(idx, 1);
+        },
+
+        /**
+         * Build <option> HTML string for the product dropdown in the export modal.
+         * Uses x-html because x-for inside <select> is not reliable in Alpine v3.
+         */
+        productOptions: function (selectedId) {
+          var prods = this.products || [];
+          var opts = '<option value="">-- Chọn sản phẩm --</option>';
+          for (var i = 0; i < prods.length; i++) {
+            var p = prods[i];
+            var sel = (String(p.id) === String(selectedId)) ? ' selected' : '';
+            var stock = isNaN(parseFloat(p.current_stock)) ? 0 : parseFloat(p.current_stock);
+            opts += '<option value="' + p.id + '"' + sel + '>'
+                  + p.name + (p.sku ? ' [' + p.sku + ']' : '')
+                  + ' (tồn: ' + stock + ')'
+                  + '</option>';
+          }
+          return opts;
         },
 
         onProductChange: function (item) {
@@ -555,8 +807,13 @@
           var self = this;
           HTWApp.request('htw_export_detail', { id: id }, function (res) {
             if (res.success) {
-              self.detailOrder = res.data;
-              self.detailModal = true;
+              self.detailOrder   = res.data;
+              self.detailReturns = [];
+              self.detailModal   = true;
+              // Load return history
+              HTWApp.request('htw_return_list', { export_order_id: id }, function (rr) {
+                if (rr.success) { self.detailReturns = rr.data || []; }
+              });
             } else {
               alert(res.data || 'Không thể tải chi tiết đơn hàng.');
             }
@@ -571,11 +828,237 @@
           });
         },
 
+        /**
+         * Open the Return Order modal for a confirmed/partial_return export order.
+         * Builds the list of returnable items with already-returned qty pre-fetched.
+         */
+        openReturn: function (order) {
+          var self = this;
+          self.returnForm = {
+            export_order_id:   order.id,
+            export_order_code: order.order_code,
+            return_date: new Date().toISOString().split('T')[0],
+            reason: '',
+            notes:  '',
+            items:  []
+          };
+
+          // Fetch confirmed-return history for this order to compute max_returnable per item
+          HTWApp.request('htw_return_list', { export_order_id: order.id }, function (rr) {
+            var alreadyMap = {};
+            if (rr.success) {
+              (rr.data || []).forEach(function (ro) {
+                if (ro.status !== 'confirmed') return;
+                (ro.items || []).forEach(function (ri) {
+                  alreadyMap[ri.export_item_id] = (alreadyMap[ri.export_item_id] || 0) + parseFloat(ri.qty_returned || 0);
+                });
+              });
+            }
+
+            self.returnForm.items = (order.items || []).map(function (ei) {
+              var soldQty          = parseFloat(ei.qty || 0);
+              var alreadyReturned  = alreadyMap[ei.id] || 0;
+              var maxReturnable    = Math.max(0, soldQty - alreadyReturned);
+              return {
+                export_item_id:      ei.id,
+                product_name:        ei.product_name || '—',
+                qty_sold:            soldQty,
+                qty_already_returned: alreadyReturned,
+                max_returnable:      maxReturnable,
+                qty_returned:        maxReturnable > 0 ? maxReturnable : 0,
+                sale_price:          parseFloat(ei.sale_price || 0),
+                cogs_per_unit:       parseFloat(ei.cogs_per_unit || 0),
+                selected:            maxReturnable > 0
+              };
+            }).filter(function (ri) { return ri.qty_sold > 0; });
+
+            self.returnModal = true;
+          });
+        },
+
+        toggleAllReturn: function (evt) {
+          var checked = evt.target.checked;
+          this.returnForm.items.forEach(function (ri) {
+            if (ri.max_returnable > 0) ri.selected = checked;
+          });
+        },
+
+        get returnTotalQty() {
+          var self = this;
+          return (self.returnForm.items || []).reduce(function (s, ri) {
+            return s + (ri.selected ? (parseFloat(ri.qty_returned) || 0) : 0);
+          }, 0);
+        },
+
+        get returnTotalRefund() {
+          var self = this;
+          return (self.returnForm.items || []).reduce(function (s, ri) {
+            if (!ri.selected) return s;
+            return s + (parseFloat(ri.qty_returned) || 0) * ri.sale_price;
+          }, 0);
+        },
+
+        get returnTotalCogs() {
+          var self = this;
+          return (self.returnForm.items || []).reduce(function (s, ri) {
+            if (!ri.selected) return s;
+            return s + (parseFloat(ri.qty_returned) || 0) * ri.cogs_per_unit;
+          }, 0);
+        },
+
+        /**
+         * Save + immediately confirm the return order in one step.
+         * (We combine save & confirm for UX simplicity — the backend validates everything.)
+         */
+        saveReturn: function () {
+          var self = this;
+          var selectedItems = (self.returnForm.items || []).filter(function (ri) {
+            return ri.selected && parseFloat(ri.qty_returned) > 0;
+          });
+
+          if (!selectedItems.length) {
+            alert('Vui lòng chọn ít nhất 1 sản phẩm để trả.');
+            return;
+          }
+
+          var hasExcess = selectedItems.some(function (ri) {
+            return parseFloat(ri.qty_returned) > ri.max_returnable;
+          });
+          if (hasExcess) {
+            alert('Một số sản phẩm có số lượng trả vượt giới hạn. Vui lòng kiểm tra lại.');
+            return;
+          }
+
+          if (!confirm('Xác nhận đơn trả hàng? Tồn kho sẽ được hoàn lại ngay lập tức.')) return;
+
+          self.returnSaving = true;
+
+          var data = {
+            export_order_id: self.returnForm.export_order_id,
+            return_date:     self.returnForm.return_date,
+            reason:          self.returnForm.reason,
+            notes:           self.returnForm.notes
+          };
+          selectedItems.forEach(function (ri, idx) {
+            data['items[' + idx + '][export_item_id]'] = ri.export_item_id;
+            data['items[' + idx + '][qty_returned]']   = ri.qty_returned;
+          });
+
+          // Step 1: Save pending return
+          HTWApp.request('htw_save_return', data, function (saveRes) {
+            if (!saveRes.success) {
+              self.returnSaving = false;
+              alert(saveRes.data);
+              return;
+            }
+            // Step 2: Confirm the return immediately
+            HTWApp.request('htw_confirm_return', { return_id: saveRes.data.return_id }, function (confirmRes) {
+              self.returnSaving = false;
+              if (confirmRes.success) {
+                self.returnModal = false;
+                location.reload();
+              } else {
+                alert('Lưu thành công nhưng xác nhận thất bại: ' + confirmRes.data
+                    + '\n\nVui lòng vào Chi tiết đơn để xác nhận thủ công.');
+                location.reload();
+              }
+            });
+          });
+        },
+
+        statusLabel: function (s) {
+          var map = {
+            'draft':          'Nháp',
+            'confirmed':      'Đã xác nhận',
+            'partial_return': 'Trả 1 phần',
+            'fully_returned': 'Đã trả toàn bộ'
+          };
+          return map[s] || s;
+        },
+
         channelLabel: HTWApp.channelLabel,
-        fmt: HTWApp.fmt,
-        fmtNum: HTWApp.fmtNum,
+        fmt:          HTWApp.fmt,
+        fmtNum:       HTWApp.fmtNum,
+        parseNum: function (v) {
+          if (typeof v === 'string') v = v.replace(/[^0-9.]/g, '');
+          return parseFloat(v) || 0;
+        },
+
+        /**
+         * Print a return order slip.
+         * Opens a new window with a formatted, print-ready HTML document.
+         */
+        printReturn: function (ro, order) {
+          var fmt    = HTWApp.fmt;
+          var fmtNum = HTWApp.fmtNum;
+
+          var rows = '';
+          var total = 0;
+          (ro.items || []).forEach(function (ri) {
+            var subtotal = parseFloat(ri.qty_returned) * parseFloat(ri.sale_price);
+            total += subtotal;
+            rows += '<tr>'
+              + '<td style="padding:6px 10px;">' + (ri.product_name || '\u2014') + '</td>'
+              + '<td style="text-align:right;padding:6px 10px;">' + fmtNum(ri.qty_returned) + '</td>'
+              + '<td style="text-align:right;padding:6px 10px;">' + fmt(ri.sale_price) + '</td>'
+              + '<td style="text-align:right;padding:6px 10px;font-weight:700;color:#e53e3e;">' + fmt(subtotal) + '</td>'
+              + '</tr>';
+          });
+
+          var orderCode = order ? (order.order_code || '') : '';
+          var customer  = order ? (order.customer_name || '\u2014') : '\u2014';
+          var returnDate = String(ro.return_date || '').split(' ')[0];
+          var rParts = returnDate.split('-');
+          var dateFmt = rParts.length === 3 ? rParts[2]+'/'+rParts[1]+'/'+rParts[0] : returnDate;
+
+          var html = '<!DOCTYPE html><html lang="vi"><head><meta charset="UTF-8">'
+            + '<title>Phi\u1ebfu tr\u1ea3 h\u00e0ng \u2014 ' + ro.return_code + '</title>'
+            + '<style>'
+            + 'body{font-family:Arial,sans-serif;font-size:13px;color:#1a1a1a;margin:0;padding:24px;}'
+            + 'h1{font-size:18px;margin:0 0 4px;} .sub{color:#555;font-size:12px;margin-bottom:16px;}'
+            + 'table{width:100%;border-collapse:collapse;margin-top:10px;}'
+            + 'th{background:#f5f5f5;text-align:left;padding:8px 10px;border-bottom:2px solid #ddd;font-size:12px;}'
+            + 'td{padding:6px 10px;border-bottom:1px solid #eee;}'
+            + '.total-row{font-weight:700;background:#fff8f0;}'
+            + '.info-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px;}'
+            + '.info-label{color:#666;font-size:11px;text-transform:uppercase;letter-spacing:.5px;}'
+            + '.info-value{font-weight:600;}'
+            + '.badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;background:#22c55e;color:#fff;}'
+            + '@media print{@page{margin:15mm;}}'
+            + '</style></head><body>'
+            + '<h1>\uD83D\uDD04 Phi\u1ebfu tr\u1ea3 h\u00e0ng</h1>'
+            + '<div class="sub">M\u00e3 phi\u1ebfu: <strong>' + ro.return_code + '</strong>'
+            + ' &nbsp;|&nbsp; \u0110\u01a1n b\u00e1n: <strong>' + orderCode + '</strong>'
+            + ' &nbsp;|&nbsp; Ng\u00e0y in: <strong>' + dateFmt + '</strong></div>'
+            + '<div class="info-grid">'
+            + '<div><div class="info-label">Kh\u00e1ch h\u00e0ng</div><div class="info-value">' + customer + '</div></div>'
+            + '<div><div class="info-label">Ng\u00e0y tr\u1ea3 h\u00e0ng</div><div class="info-value">' + dateFmt + '</div></div>'
+            + '<div><div class="info-label">L\u00fd do tr\u1ea3</div><div class="info-value">' + (ro.reason || '\u2014') + '</div></div>'
+            + '<div><div class="info-label">Tr\u1ea1ng th\u00e1i</div><div><span class="badge">\u0110\u00e3 x\u00e1c nh\u1eadn</span></div></div>'
+            + '</div>'
+            + '<table><thead><tr>'
+            + '<th>S\u1ea3n ph\u1ea9m</th><th style="text-align:right;min-width:60px;">SL tr\u1ea3</th>'
+            + '<th style="text-align:right;min-width:100px;">Gi\u00e1 b\u00e1n</th>'
+            + '<th style="text-align:right;min-width:110px;">Th\u00e0nh ti\u1ec1n ho\u00e0n</th>'
+            + '</tr></thead><tbody>' + rows + '</tbody>'
+            + '<tfoot><tr class="total-row">'
+            + '<td colspan="3" style="padding:8px 10px;text-align:right;">T\u1ed5ng ho\u00e0n tr\u1ea3:</td>'
+            + '<td style="text-align:right;padding:8px 10px;color:#e53e3e;font-size:15px;">' + fmt(total) + '</td>'
+            + '</tr></tfoot></table>'
+            + (ro.notes ? '<p style="margin-top:16px;font-size:12px;color:#666;font-style:italic;">Ghi ch\u00fa: ' + ro.notes + '</p>' : '')
+            + '<div style="margin-top:40px;display:grid;grid-template-columns:1fr 1fr;gap:30px;font-size:12px;text-align:center;">'
+            + '<div><div style="border-top:1px solid #999;padding-top:6px;margin-top:40px;">Ng\u01b0\u1eddi l\u1eadp phi\u1ebfu</div></div>'
+            + '<div><div style="border-top:1px solid #999;padding-top:6px;margin-top:40px;">Kh\u00e1ch h\u00e0ng x\u00e1c nh\u1eadn</div></div>'
+            + '</div>'
+            + '<scr'+'ipt>window.onload=function(){window.print();};<\/scr'+'ipt>'
+            + '</body></html>';
+
+          var w = window.open('', '_blank', 'width=800,height=600');
+          if (w) { w.document.write(html); w.document.close(); }
+        },
+
         fmtDate: function (d) {
-          if (!d) return '—';
+          if (!d) return '\u2014';
           var dateOnly = String(d).split(' ')[0];
           var parts = dateOnly.split('-');
           if (parts.length < 3) return d;
@@ -593,6 +1076,19 @@
         dateFrom:  new Date().toISOString().slice(0,7) + '-01',
         dateTo:    new Date().toISOString().slice(0,10),
 
+        // Export tab state
+        exportTab:     'stock',
+        exportDateFrom: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0,10),
+        exportDateTo:   new Date().toISOString().slice(0,10),
+        exporting:      false,
+
+        // Performance tab sort state
+        sortKey: 'performance_score',
+        sortAsc: false,
+
+        // Performance tab filter state
+        perfFilter: 'all',   // 'all' | 'increase' | 'maintain' | 'review'
+
         load: function () {
           var self = this;
           self.loading = true;
@@ -603,8 +1099,12 @@
           }, function (res) {
             self.loading = false;
             if (!res.success) return;
-            self.rows    = res.data.rows || [];
+            self.rows    = res.data.rows    || [];
             self.summary = res.data;
+            // Reset sort on new load
+            self.sortKey = self.tab === 'product_performance' ? 'performance_score' : '';
+            self.sortAsc = false;
+            self.perfFilter = 'all';
           });
         },
 
@@ -618,6 +1118,101 @@
 
         get totalProfit() {
           return (this.rows || []).reduce(function (s, r) { return s + parseFloat(r.total_profit||r.profit||0); }, 0);
+        },
+
+        // Performance tab: top_cards from summary
+        get topCards() {
+          return (this.summary && this.summary.top_cards) ? this.summary.top_cards : null;
+        },
+
+        // Performance tab: filtered + sorted rows
+        get perfRows() {
+          var self = this;
+          var filtered = (self.rows || []).filter(function (r) {
+            if (self.perfFilter === 'all') return true;
+            return r.recommendation === self.perfFilter;
+          });
+          if (!self.sortKey) return filtered;
+          var key = self.sortKey;
+          var asc = self.sortAsc;
+          return filtered.slice().sort(function (a, b) {
+            var av = parseFloat(a[key]);
+            var bv = parseFloat(b[key]);
+            if (!isNaN(av) && !isNaN(bv)) return asc ? (av - bv) : (bv - av);
+            var as = String(a[key] || '');
+            var bs = String(b[key] || '');
+            return asc ? as.localeCompare(bs) : bs.localeCompare(as);
+          });
+        },
+
+        sort: function (key) {
+          if (this.sortKey === key) {
+            this.sortAsc = !this.sortAsc;
+          } else {
+            this.sortKey = key;
+            this.sortAsc = false;
+          }
+        },
+
+        sortIcon: function (key) {
+          if (this.sortKey !== key) return ' ↕';
+          return this.sortAsc ? ' ↑' : ' ↓';
+        },
+
+        scoreColor: function (score) {
+          var s = parseFloat(score);
+          if (s >= 70) return '#22c55e';
+          if (s >= 40) return '#f59e0b';
+          return '#ef4444';
+        },
+
+        scoreBg: function (score) {
+          var s = parseFloat(score);
+          if (s >= 70) return 'rgba(34,197,94,0.12)';
+          if (s >= 40) return 'rgba(245,158,11,0.12)';
+          return 'rgba(239,68,68,0.12)';
+        },
+
+        recoLabel: function (rec) {
+          var map = {
+            'increase': '🟢 Tăng vốn',
+            'maintain': '🟡 Duy trì',
+            'review':   '🔴 Xem xét',
+            'no_sales': '⚫ Chưa bán'
+          };
+          return map[rec] || rec;
+        },
+
+        recoColor: function (rec) {
+          if (rec === 'increase') return '#22c55e';
+          if (rec === 'maintain') return '#f59e0b';
+          if (rec === 'review')   return '#ef4444';
+          return 'var(--htw-text-muted)';
+        },
+
+        switchTab: function (t) {
+          this.tab = t;
+          if (t !== 'export') this.load();
+        },
+
+        reportLabel: function (r) {
+          var labels = {
+            stock:               'Tồn kho',
+            movement:            'Nhập - Xuất - Tồn',
+            profit_by_product:   'Lợi nhuận theo SP',
+            profit_by_channel:   'Lợi nhuận theo Kênh',
+            product_performance: 'Hiệu suất Sản phẩm'
+          };
+          return labels[r] || r;
+        },
+
+        exportPdf: function () {
+          var self = this;
+          self.exporting = true;
+          setTimeout(function () {
+            HTWApp.exportPdf(self.exportTab, self.exportDateFrom, self.exportDateTo);
+            self.exporting = false;
+          }, 100);
         },
 
         channelLabel: HTWApp.channelLabel,

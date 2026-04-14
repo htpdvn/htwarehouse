@@ -1,5 +1,5 @@
 <?php defined('ABSPATH') || exit; ?>
-<div class="htw-wrap" x-data="htwDashboard()" x-init="init()">
+<div class="htw-wrap" x-data="htwDashboard()">
 
     <div class="htw-page-header">
         <h1 class="htw-page-title"><span class="dashicons dashicons-store"></span> Dashboard</h1>

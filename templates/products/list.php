@@ -10,8 +10,70 @@ $products = $wpdb->get_results("SELECT * FROM {$wpdb->prefix}htw_products ORDER 
 
     <div class="htw-page-header">
         <h1 class="htw-page-title"><span class="dashicons dashicons-archive"></span> Sản phẩm</h1>
-        <button class="htw-btn htw-btn-primary" @click="openAdd()">+ Thêm sản phẩm</button>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <button class="htw-btn htw-btn-ghost htw-btn-sm" @click="exportCategories()" :disabled="exporting" title="Xuất danh sách danh mục ra tệp CSV">
+                <span x-show="exporting" class="htw-spinner"></span>
+                <span class="dashicons dashicons-download" style="font-size:16px;width:16px;height:16px;margin-right:4px;"></span>
+                <span x-text="exporting ? 'Đang xuất…' : 'Xuất danh mục'"></span>
+            </button>
+            <button class="htw-btn htw-btn-ghost htw-btn-sm" @click="openImport()" title="Nhập danh mục / sản phẩm từ tệp CSV">
+                <span class="dashicons dashicons-upload" style="font-size:16px;width:16px;height:16px;margin-right:4px;"></span>
+                Nhập từ CSV
+            </button>
+            <button class="htw-btn htw-btn-primary" @click="openAdd()">+ Thêm sản phẩm</button>
+        </div>
     </div>
+
+    <!-- Import CSV Modal -->
+    <div class="htw-modal-overlay" x-show="importModal" x-cloak @click.self="importModal=false">
+        <div class="htw-modal" style="max-width:520px;" @click.stop>
+            <div class="htw-modal-title">
+                <span class="dashicons dashicons-upload"></span>
+                <span>Nhập danh mục / sản phẩm từ CSV</span>
+            </div>
+
+            <!-- Instructions -->
+            <div style="background:var(--htw-surface-2);border:1px solid var(--htw-border);border-radius:8px;padding:14px 16px;margin-bottom:16px;font-size:.84rem;color:var(--htw-text-muted);line-height:1.7;">
+                <strong style="color:var(--htw-text);">Định dạng tệp CSV hỗ trợ:</strong><br>
+                Cột bắt buộc: <code>Danh mục</code>, <code>Tên sản phẩm</code>, <code>SKU</code><br>
+                Cột tuỳ chọn: <code>Đơn vị</code>, <code>Barcode</code>, <code>Link sản phẩm</code>, <code>Ghi chú</code><br>
+                <span style="color:var(--htw-warning,#f59e0b);">⚠</span> Cột <strong>Tồn kho</strong> và <strong>Giá vốn</strong> bị <strong>bỏ qua hoàn toàn</strong> — dữ liệu tồn kho chỉ được cập nhật qua nghiệp vụ nhập/xuất kho.<br>
+                • File phải mã hoá <strong>UTF-8</strong> (Excel: <em>Lưu dưới dạng CSV UTF-8</em>)
+                <br><br>
+                <a href="#" @click.prevent="downloadSample()" style="color:var(--htw-info);text-decoration:none;">
+                    <span class="dashicons dashicons-download" style="font-size:14px;width:14px;height:14px;"></span>
+                    Tải file mẫu
+                </a>
+            </div>
+
+
+
+            <!-- File drop zone -->
+            <div id="htw-drop-zone"
+                style="border:2px dashed var(--htw-border);border-radius:10px;padding:32px 20px;text-align:center;cursor:pointer;transition:border-color .2s,background .2s;"
+                :style="importDragging ? 'border-color:var(--htw-info);background:rgba(99,179,237,.07);' : ''"
+                @dragover.prevent="importDragging=true"
+                @dragleave.prevent="importDragging=false"
+                @drop.prevent="onDropFile($event)"
+                @click="$refs.csvInput.click()">
+                <span class="dashicons dashicons-media-spreadsheet" style="font-size:36px;width:36px;height:36px;color:var(--htw-info);display:block;margin:0 auto 10px;"></span>
+                <div style="font-size:.9rem;color:var(--htw-text);" x-text="importFile ? importFile.name : 'Kéo thả file CSV vào đây hoặc nhấp để chọn'"></div>
+                <div style="font-size:.78rem;color:var(--htw-text-muted);margin-top:6px;">Chấp nhận: .csv</div>
+                <input type="file" accept=".csv,text/csv" x-ref="csvInput" style="display:none;" @change="onPickFile($event)">
+            </div>
+
+            <div x-show="importMsg" :class="'htw-alert htw-alert-' + importMsgType" style="margin-top:14px;" x-text="importMsg"></div>
+
+            <div class="htw-modal-footer">
+                <button class="htw-btn htw-btn-ghost" @click="importModal=false">Huỷ</button>
+                <button class="htw-btn htw-btn-primary" @click="doImport()" :disabled="!importFile || importing">
+                    <span x-show="importing" class="htw-spinner"></span>
+                    <span x-text="importing ? 'Đang nhập…' : 'Bắt đầu nhập'"></span>
+                </button>
+            </div>
+        </div>
+    </div>
+
 
     <!-- Search -->
     <div class="htw-search-bar">
