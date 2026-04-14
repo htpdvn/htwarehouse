@@ -25,8 +25,8 @@
         <span class="dashicons dashicons-info-outline" style="flex-shrink:0;"></span>
         <span>
             <strong>Chính sách lưu trữ:</strong>
-            Trong <strong id="htw-max-days">365</strong> ngày
-            &amp; giới hạn tổng tối đa <strong id="htw-max-rows">50.000</strong> bản ghi.
+            <strong id="htw-max-days">365</strong> ngày
+            &amp; tối đa <strong id="htw-max-rows">50.000</strong> bản ghi.
         </span>
     </div>
 

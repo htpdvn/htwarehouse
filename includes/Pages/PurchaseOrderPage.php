@@ -403,7 +403,19 @@ class PurchaseOrderPage
             'po_payment',
             $id,
             $po->po_code,
-            'Ghi nhận thanh toán ' . number_format($amount, 0, ',', '.') . ' đ cho đơn ' . $po->po_code . ' (' . $payment_date . ')'
+            'Ghi nhận thanh toán ' . number_format($amount, 0, ',', '.') . ' đ cho đơn ' . $po->po_code . ' (' . $payment_date . ')',
+            [
+                'amount_paid'      => (float) $po->amount_paid,
+                'amount_remaining' => (float) $po->amount_remaining,
+                'status'           => $po->status,
+            ],
+            [
+                'amount_paid'      => $new_paid,
+                'amount_remaining' => $new_remaining,
+                'status'           => $new_status,
+                'new_payment'      => $amount,
+                'balance_check'    => round((float)$po->total_amount - $new_paid - $new_remaining, 2),
+            ]
         );
 
         wp_send_json_success([
@@ -534,7 +546,19 @@ class PurchaseOrderPage
             'po_payment',
             $payment->po_id,
             $po->po_code ?? '',
-            'Sửa thanh toán cho đơn ' . ($po->po_code ?? 'ID=' . $payment->po_id) . ': ' . number_format((float)$payment->amount, 0, ',', '.') . ' đ → ' . number_format($amount, 0, ',', '.') . ' đ'
+            'Sửa thanh toán cho đơn ' . ($po->po_code ?? 'ID=' . $payment->po_id) . ': ' . number_format((float)$payment->amount, 0, ',', '.') . ' đ → ' . number_format($amount, 0, ',', '.') . ' đ',
+            [
+                'amount_paid'      => (float) $po->amount_paid,
+                'amount_remaining' => (float) $po->amount_remaining,
+                'old_payment'      => (float) $payment->amount,
+            ],
+            [
+                'amount_paid'      => $new_paid,
+                'amount_remaining' => $new_remaining,
+                'new_payment'      => $amount,
+                'status'           => $new_status,
+                'balance_check'    => round((float)$po->total_amount - $new_paid - $new_remaining, 2),
+            ]
         );
 
         wp_send_json_success([
@@ -601,7 +625,19 @@ class PurchaseOrderPage
             'po_payment',
             $payment->po_id,
             $po->po_code ?? '',
-            'Xóa thanh toán ' . number_format((float)$payment->amount, 0, ',', '.') . ' đ của đơn ' . ($po->po_code ?? 'ID=' . $payment->po_id)
+            'Xóa thanh toán ' . number_format((float)$payment->amount, 0, ',', '.') . ' đ của đơn ' . ($po->po_code ?? 'ID=' . $payment->po_id),
+            [
+                'amount_paid'      => (float) $po->amount_paid,
+                'amount_remaining' => (float) $po->amount_remaining,
+                'deleted_payment'  => (float) $payment->amount,
+                'status'           => $po->status,
+            ],
+            [
+                'amount_paid'      => $new_paid,
+                'amount_remaining' => $new_remaining,
+                'status'           => $new_status,
+                'balance_check'    => round((float)$po->total_amount - $new_paid - $new_remaining, 2),
+            ]
         );
 
         wp_send_json_success([

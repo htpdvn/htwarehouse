@@ -7,12 +7,13 @@
 
     <!-- Tabs -->
     <div class="htw-tabs">
-        <button class="htw-tab" :class="{active: tab==='stock'}"             @click="switchTab('stock')">📦 Tồn kho</button>
-        <button class="htw-tab" :class="{active: tab==='movement'}"         @click="switchTab('movement')">🔄 Nhập Xuất Tồn</button>
+        <button class="htw-tab" :class="{active: tab==='stock'}" @click="switchTab('stock')">📦 Tồn kho</button>
+        <button class="htw-tab" :class="{active: tab==='movement'}" @click="switchTab('movement')">🔄 Nhập Xuất Tồn</button>
         <button class="htw-tab" :class="{active: tab==='profit_by_product'}" @click="switchTab('profit_by_product')">📊 Lợi nhuận / SP</button>
         <button class="htw-tab" :class="{active: tab==='profit_by_channel'}" @click="switchTab('profit_by_channel')">📡 Lợi nhuận / Kênh</button>
         <button class="htw-tab" :class="{active: tab==='product_performance'}" @click="switchTab('product_performance')">🏆 Hiệu suất SP</button>
-        <button class="htw-tab" :class="{active: tab==='export'}"           @click="switchTab('export')">📥 Xuất báo cáo</button>
+        <button class="htw-tab" :class="{active: tab==='supplier_scorecard'}" @click="switchTab('supplier_scorecard')">🏭 Đánh giá NCC</button>
+        <button class="htw-tab" :class="{active: tab==='export'}" @click="switchTab('export')">📥 Xuất báo cáo</button>
     </div>
 
     <!-- Date filter -->
@@ -231,8 +232,7 @@
                     class="htw-btn htw-btn-primary"
                     @click="exportPdf()"
                     :disabled="exporting"
-                    style="min-width:180px;"
-                >
+                    style="min-width:180px;">
                     <span x-show="!exporting">📄 Tải file PDF</span>
                     <span x-show="exporting">⏳ Đang tạo PDF…</span>
                 </button>
@@ -353,7 +353,7 @@
                                     x-text="fmt(r.net_profit)"></td>
                                 <td style="text-align:right;">
                                     <span :style="{color: parseFloat(r.margin_pct)>=20 ? 'var(--htw-success)' : parseFloat(r.margin_pct)>=10 ? 'var(--htw-warning)' : 'var(--htw-danger)'}"
-                                          x-text="r.margin_pct + '%'"></span>
+                                        x-text="r.margin_pct + '%'"></span>
                                 </td>
                                 <td style="text-align:right;font-weight:600;"
                                     :style="{color: parseFloat(r.turnover)>=1 ? 'var(--htw-info)' : 'var(--htw-text-muted)'}"
@@ -392,8 +392,231 @@
         </div>
     </template>
 
-    <!-- Empty state -->
-    <template x-if="!loading && !rows.length">
+    <!-- ══ Đánh giá Nhà Cung Cấp ══ -->
+    <template x-if="!loading && tab === 'supplier_scorecard'">
+        <div>
+
+            <!-- KPI Cards -->
+            <template x-if="supplierKpi">
+                <div class="htw-kpi-grid" style="margin-bottom:24px;">
+
+                    <!-- Giao nhanh nhất -->
+                    <template x-if="supplierKpi.fastest">
+                        <div class="htw-kpi-card green">
+                            <div class="htw-kpi-label">⚡ Giao hàng nhanh nhất</div>
+                            <div class="htw-kpi-value" style="font-size:1.15rem;" x-text="supplierKpi.fastest.supplier_name"></div>
+                            <div class="htw-kpi-sub" x-text="'TB ' + supplierKpi.fastest.avg_lead_time_days + ' ngày | ' + supplierKpi.fastest.total_orders + ' đơn'"></div>
+                        </div>
+                    </template>
+
+                    <!-- Phí TB/đơn thấp nhất -->
+                    <template x-if="supplierKpi.cheapest_fee">
+                        <div class="htw-kpi-card yellow">
+                            <div class="htw-kpi-label">💰 Phí TB/đơn thấp nhất</div>
+                            <div class="htw-kpi-value" style="font-size:1.15rem;" x-text="supplierKpi.cheapest_fee.supplier_name"></div>
+                            <div class="htw-kpi-sub" x-text="fmt(supplierKpi.cheapest_fee.avg_fee_per_order) + '/đơn | ' + supplierKpi.cheapest_fee.total_orders + ' đơn'"></div>
+                        </div>
+                    </template>
+
+                    <!-- Nhiều đơn nhất -->
+                    <template x-if="supplierKpi.most_orders">
+                        <div class="htw-kpi-card blue">
+                            <div class="htw-kpi-label">📦 Nhiều đơn nhất</div>
+                            <div class="htw-kpi-value" style="font-size:1.15rem;" x-text="supplierKpi.most_orders.supplier_name"></div>
+                            <div class="htw-kpi-sub" x-text="supplierKpi.most_orders.total_orders + ' đơn đặt hàng | ' + fmtNum(supplierKpi.most_orders.total_qty,0) + ' sản phẩm'"></div>
+                        </div>
+                    </template>
+
+                </div>
+            </template>
+
+            <!-- Chart + toggle -->
+            <div class="htw-chart-card" style="margin-bottom:20px;padding:18px 20px;">
+                <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap;">
+                    <span style="font-weight:600;font-size:.95rem;color:var(--htw-text);">So sánh trực quan</span>
+                    <div style="display:flex;gap:6px;margin-left:auto;">
+                        <button class="htw-btn htw-btn-sm"
+                            :class="supplierChartMode==='lead_time' ? 'htw-btn-primary' : 'htw-btn-ghost'"
+                            @click="supplierChartMode='lead_time'; renderSupplierChart()">⏱ Thời gian giao</button>
+                        <button class="htw-btn htw-btn-sm"
+                            :class="supplierChartMode==='cost' ? 'htw-btn-primary' : 'htw-btn-ghost'"
+                            @click="supplierChartMode='cost'; renderSupplierChart()">💸 Chi phí/ĐV</button>
+                        <button class="htw-btn htw-btn-sm"
+                            :class="supplierChartMode==='total' ? 'htw-btn-primary' : 'htw-btn-ghost'"
+                            @click="supplierChartMode='total'; renderSupplierChart()">🏦 Tổng chi phí</button>
+                    </div>
+                </div>
+                <div style="position:relative;height:260px;max-height:260px;overflow:hidden;">
+                    <canvas id="supplierScorecardChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Toolbar -->
+            <div class="htw-search-bar" style="margin-bottom:14px;">
+                <span style="font-size:.8rem;color:var(--htw-text-muted);white-space:nowrap;">Sắp xếp theo:</span>
+                <button class="htw-btn htw-btn-sm" :class="supplierSortKey==='avg_lead_time_days' ? 'htw-btn-primary' : 'htw-btn-ghost'"
+                    @click="supplierSort('avg_lead_time_days')">⏱ TG giao</button>
+                <button class="htw-btn htw-btn-sm" :class="supplierSortKey==='avg_cost_per_unit' ? 'htw-btn-primary' : 'htw-btn-ghost'"
+                    @click="supplierSort('avg_cost_per_unit')">💰 Chi phí/ĐV</button>
+                <button class="htw-btn htw-btn-sm" :class="supplierSortKey==='total_landed_cost' ? 'htw-btn-primary' : 'htw-btn-ghost'"
+                    @click="supplierSort('total_landed_cost')">🏦 Tổng CP</button>
+                <button class="htw-btn htw-btn-sm" :class="supplierSortKey==='total_orders' ? 'htw-btn-primary' : 'htw-btn-ghost'"
+                    @click="supplierSort('total_orders')">📦 Số đơn</button>
+                <span style="margin-left:auto;font-size:.8rem;color:var(--htw-text-muted);" x-text="supplierRows.length + ' nhà cung cấp'"></span>
+            </div>
+
+            <!-- Bảng chi tiết -->
+            <div class="htw-table-wrap">
+                <table class="htw-table">
+                    <thead>
+                        <tr>
+                            <th style="cursor:pointer;" @click="supplierSort('supplier_name')">
+                                Nhà cung cấp<span x-text="supplierSortIcon('supplier_name')"></span>
+                            </th>
+                            <th style="text-align:right;cursor:pointer;" @click="supplierSort('total_orders')">
+                                Số đơn<span x-text="supplierSortIcon('total_orders')"></span>
+                            </th>
+                            <th style="text-align:right;cursor:pointer;" @click="supplierSort('total_goods')">
+                                Tiền hàng<span x-text="supplierSortIcon('total_goods')"></span>
+                            </th>
+                            <th style="text-align:right;cursor:pointer;" @click="supplierSort('total_fees')">
+                                Tổng phí<span x-text="supplierSortIcon('total_fees')"></span>
+                            </th>
+                            <th style="text-align:right;cursor:pointer;" @click="supplierSort('fee_ratio_pct')">
+                                Phí %<span x-text="supplierSortIcon('fee_ratio_pct')"></span>
+                            </th>
+                            <th style="text-align:right;cursor:pointer;" @click="supplierSort('avg_fee_per_order')">
+                                Phí TB/đơn<span x-text="supplierSortIcon('avg_fee_per_order')"></span>
+                            </th>
+                            <th style="text-align:right;cursor:pointer;" @click="supplierSort('total_landed_cost')">
+                                Tổng chi phí<span x-text="supplierSortIcon('total_landed_cost')"></span>
+                            </th>
+                            <th style="text-align:right;cursor:pointer;" @click="supplierSort('avg_cost_per_unit')">
+                                Chi phí/ĐV<span x-text="supplierSortIcon('avg_cost_per_unit')"></span>
+                            </th>
+                            <th style="text-align:center;cursor:pointer;" @click="supplierSort('avg_lead_time_days')">
+                                TG giao TB<span x-text="supplierSortIcon('avg_lead_time_days')"></span>
+                            </th>
+                            <th style="text-align:center;cursor:pointer;" @click="supplierSort('min_lead_time_days')">
+                                Nhanh nhất<span x-text="supplierSortIcon('min_lead_time_days')"></span>
+                            </th>
+                            <th style="text-align:center;cursor:pointer;" @click="supplierSort('max_lead_time_days')">
+                                Chậm nhất<span x-text="supplierSortIcon('max_lead_time_days')"></span>
+                            </th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <template x-for="r in supplierRows" :key="r.supplier_id + '_' + r.supplier_name">
+                            <tr>
+                                <td>
+                                    <div style="font-weight:600;" x-text="r.supplier_name"></div>
+                                    <div style="font-size:.75rem;color:var(--htw-text-muted);" x-text="r.total_orders + ' đơn · ' + fmtNum(r.total_qty,0) + ' sản phẩm'"></div>
+                                </td>
+                                <td style="text-align:right;font-weight:600;" x-text="r.total_orders"></td>
+                                <td style="text-align:right;" x-text="fmt(r.total_goods)"></td>
+                                <td style="text-align:right;color:var(--htw-warning);" x-text="fmt(r.total_fees)"></td>
+                                <td style="text-align:right;">
+                                    <span :style="{color: parseFloat(r.fee_ratio_pct)>15 ? 'var(--htw-danger)' : parseFloat(r.fee_ratio_pct)>8 ? 'var(--htw-warning)' : 'var(--htw-success)'}"
+                                        x-text="r.fee_ratio_pct + '%'"></span>
+                                </td>
+                                <td style="text-align:right;color:var(--htw-warning);font-weight:600;" x-text="fmt(r.avg_fee_per_order)"></td>
+                                <td style="text-align:right;font-weight:700;color:var(--htw-info);" x-text="fmt(r.total_landed_cost)"></td>
+                                <td style="text-align:right;font-weight:600;" x-text="r.avg_cost_per_unit > 0 ? fmt(r.avg_cost_per_unit) : '—'"></td>
+                                <td style="text-align:center;">
+                                    <template x-if="r.avg_lead_time_days !== null">
+                                        <span class="htw-badge" :class="leadTimeBadgeClass(r.avg_lead_time_days)"
+                                            x-text="r.avg_lead_time_days + ' ngày'"></span>
+                                    </template>
+                                    <template x-if="r.avg_lead_time_days === null">
+                                        <span style="color:var(--htw-text-muted);">—</span>
+                                    </template>
+                                </td>
+                                <td style="text-align:center;color:var(--htw-success);font-weight:600;"
+                                    x-text="r.min_lead_time_days !== null ? r.min_lead_time_days + ' ngày' : '—'"></td>
+                                <td style="text-align:center;color:var(--htw-danger);font-weight:600;"
+                                    x-text="r.max_lead_time_days !== null ? r.max_lead_time_days + ' ngày' : '—'"></td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Ghi chú -->
+            <div class="htw-chart-card" style="margin-top:16px;padding:14px 18px;">
+                <span style="font-size:.8rem;color:var(--htw-text-muted);">
+                    <strong style="color:var(--htw-text);">Thời gian giao hàng</strong>: tính từ ngày đặt hàng đến ngày lô nhập kho được xác nhận.
+                    Chỉ tính các đơn đặt hàng đã nhận hàng (<em>received / paid_off</em>) và lô nhập đã confirmed.
+                    &nbsp;|
+                    <span class="htw-badge htw-badge-confirmed">≤ 7 ngày Nhanh</span>&nbsp;
+                    <span class="htw-badge htw-badge-warning">8–14 ngày Trung bình</span>&nbsp;
+                    <span class="htw-badge htw-badge-draft">&gt; 14 ngày Chậm</span>
+                </span>
+            </div>
+
+
+
+            <!-- So sánh giá theo SKU chung -->
+            <template x-if="supplierSkuRows.length > 0">
+                <div style="margin-top:28px;">
+                    <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;">
+                        <h3 style="margin:0;font-size:.95rem;font-weight:700;color:var(--htw-text);">&#x1F50D; So sánh giá theo SKU chung</h3>
+                        <span style="font-size:.8rem;color:var(--htw-text-muted);" x-text="supplierSkuRows.length + ' sản phẩm mua từ ≥2 NCC'"></span>
+                    </div>
+                    <template x-for="item in supplierSkuRows" :key="item.product_id">
+                        <div class="htw-chart-card" style="margin-bottom:12px;padding:14px 18px;">
+                            <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+                                <span style="font-weight:700;font-size:.9rem;" x-text="item.product_name"></span>
+                                <span style="font-size:.75rem;color:var(--htw-text-muted);" x-text="'[' + item.sku + ']'"></span>
+                            </div>
+                            <div class="htw-table-wrap" style="margin:0;">
+                                <table class="htw-table" style="font-size:.85rem;">
+                                    <thead>
+                                        <tr>
+                                            <th>Nhà cung cấp</th>
+                                            <th style="text-align:right;">SL nhập</th>
+                                            <th style="text-align:right;">Giá nhập/đv</th>
+                                            <th style="text-align:right;">Phí phân bổ/đv</th>
+                                            <th style="text-align:right;">Chi phí thực/đv</th>
+                                            <th style="text-align:center;">So sánh</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <template x-for="sup in item.suppliers" :key="sup.supplier_id">
+                                            <tr :style="{background: sup.is_cheapest ? 'rgba(34,197,94,0.06)' : ''}">
+                                                <td style="font-weight:600;" x-text="sup.supplier_name"></td>
+                                                <td style="text-align:right;" x-text="fmtNum(sup.total_qty, 0)"></td>
+                                                <td style="text-align:right;" x-text="fmt(sup.avg_unit_price)"></td>
+                                                <td style="text-align:right;color:var(--htw-warning);" x-text="fmt(sup.allocated_fee_per_unit)"></td>
+                                                <td style="text-align:right;font-weight:700;"
+                                                    :style="{color: sup.is_cheapest ? 'var(--htw-success)' : 'var(--htw-text)'}"
+                                                    x-text="fmt(sup.total_cost_per_unit)"></td>
+                                                <td style="text-align:center;">
+                                                    <template x-if="sup.is_cheapest">
+                                                        <span class="htw-badge htw-badge-confirmed">&#x2605; Rẻ nhất</span>
+                                                    </template>
+                                                </td>
+                                            </tr>
+                                        </template>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </template>
+                    <div class="htw-chart-card" style="padding:12px 18px;margin-bottom:0;">
+                        <span style="font-size:.78rem;color:var(--htw-text-muted);">
+                            <strong style="color:var(--htw-text);">Chi phí thực/đv</strong>
+                            = Giá nhập + Phí phân bổ theo tỉ lệ giá trị hàng.
+                            Chỉ báo cáo SKU được nhập từ ≥ 2 nhà cung cấp trong kỳ.
+                        </span>
+                    </div>
+                </div>
+            </template>
+
+        </div>
+    </template>
+
+    <!-- Empty state (chỉ áp dụng cho các tab dùng rows trực tiếp) -->
+    <template x-if="!loading && !rows.length && tab !== 'supplier_scorecard' && tab !== 'export'">
         <div style="text-align:center;padding:48px;color:var(--htw-text-muted);">
             <div style="font-size:2rem;">📭</div>
             <div style="margin-top:8px;">Không có dữ liệu trong khoảng thời gian này.</div>

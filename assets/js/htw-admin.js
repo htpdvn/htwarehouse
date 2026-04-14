@@ -1089,9 +1089,20 @@
         // Performance tab filter state
         perfFilter: 'all',   // 'all' | 'increase' | 'maintain' | 'review'
 
+        // Supplier scorecard tab state
+        supplierSortKey: 'avg_lead_time_days',
+        supplierSortAsc: true,
+        supplierChartMode: 'lead_time',  // 'lead_time' | 'cost' | 'total'
+        supplierChartInst: null,
+
         load: function () {
           var self = this;
           self.loading = true;
+          // Destroy supplier chart before fetching new data
+          if (self.supplierChartInst) {
+            self.supplierChartInst.destroy();
+            self.supplierChartInst = null;
+          }
           HTWApp.request('htw_report_data', {
             report:    self.tab,
             date_from: self.dateFrom,
@@ -1105,6 +1116,12 @@
             self.sortKey = self.tab === 'product_performance' ? 'performance_score' : '';
             self.sortAsc = false;
             self.perfFilter = 'all';
+            // Supplier scorecard: reset sort + render chart after DOM update
+            if (self.tab === 'supplier_scorecard') {
+              self.supplierSortKey = 'avg_lead_time_days';
+              self.supplierSortAsc = true;
+              self.$nextTick(function () { self.renderSupplierChart(); });
+            }
           });
         },
 
@@ -1123,6 +1140,34 @@
         // Performance tab: top_cards from summary
         get topCards() {
           return (this.summary && this.summary.top_cards) ? this.summary.top_cards : null;
+        },
+
+        // Supplier scorecard: KPI data from summary
+        get supplierKpi() {
+          return (this.summary && this.summary.kpi) ? this.summary.kpi : null;
+        },
+
+        // Supplier scorecard: SKU comparison data (only SKUs bought from >=2 suppliers)
+        get supplierSkuRows() {
+          return (this.summary && this.summary.sku_comparison) ? this.summary.sku_comparison : [];
+        },
+
+        // Supplier scorecard: sorted rows
+        get supplierRows() {
+          var self = this;
+          var key = self.supplierSortKey;
+          var asc = self.supplierSortAsc;
+          if (!key) return self.rows || [];
+          return (self.rows || []).slice().sort(function (a, b) {
+            var av = a[key], bv = b[key];
+            // Nulls go last regardless of direction
+            if (av === null || av === undefined) return 1;
+            if (bv === null || bv === undefined) return -1;
+            var an = parseFloat(av), bn = parseFloat(bv);
+            if (!isNaN(an) && !isNaN(bn)) return asc ? (an - bn) : (bn - an);
+            var as2 = String(av), bs2 = String(bv);
+            return asc ? as2.localeCompare(bs2) : bs2.localeCompare(as2);
+          });
         },
 
         // Performance tab: filtered + sorted rows
@@ -1191,19 +1236,142 @@
         },
 
         switchTab: function (t) {
+          // Destroy supplier chart when leaving tab
+          if (this.supplierChartInst && t !== 'supplier_scorecard') {
+            this.supplierChartInst.destroy();
+            this.supplierChartInst = null;
+          }
           this.tab = t;
           if (t !== 'export') this.load();
         },
 
         reportLabel: function (r) {
           var labels = {
-            stock:               'Tồn kho',
-            movement:            'Nhập - Xuất - Tồn',
-            profit_by_product:   'Lợi nhuận theo SP',
-            profit_by_channel:   'Lợi nhuận theo Kênh',
-            product_performance: 'Hiệu suất Sản phẩm'
+            stock:               'T\u1ed3n kho',
+            movement:            'Nh\u1eadp - Xu\u1ea5t - T\u1ed3n',
+            profit_by_product:   'L\u1ee3i nhu\u1eadn theo SP',
+            profit_by_channel:   'L\u1ee3i nhu\u1eadn theo K\u00eanh',
+            product_performance: 'Hi\u1ec7u su\u1ea5t S\u1ea3n ph\u1ea9m',
+            supplier_scorecard:  '\u0110\u00e1nh gi\u00e1 Nh\u00e0 Cung C\u1ea5p'
           };
           return labels[r] || r;
+        },
+
+        // Supplier scorecard: column sort helper
+        supplierSort: function (key) {
+          if (this.supplierSortKey === key) {
+            this.supplierSortAsc = !this.supplierSortAsc;
+          } else {
+            this.supplierSortKey = key;
+            // Numeric fields: ascending by default (lower = better for cost/time)
+            this.supplierSortAsc = true;
+          }
+        },
+
+        supplierSortIcon: function (key) {
+          if (this.supplierSortKey !== key) return ' \u2195';
+          return this.supplierSortAsc ? ' \u2191' : ' \u2193';
+        },
+
+        // Lead-time badge class
+        leadTimeBadgeClass: function (days) {
+          var d = parseFloat(days);
+          if (isNaN(d)) return 'htw-badge-draft';
+          if (d <= 7)  return 'htw-badge-confirmed';   // green = fast
+          if (d <= 14) return 'htw-badge-warning';      // yellow = average
+          return 'htw-badge-draft';                      // grey/red = slow
+        },
+
+        // Chart.js horizontal bar chart for supplier comparison
+        renderSupplierChart: function () {
+          var self = this;
+          var canvas = document.getElementById('supplierScorecardChart');
+          if (!canvas || !self.rows || !self.rows.length) return;
+
+          // Destroy previous instance
+          if (self.supplierChartInst) {
+            self.supplierChartInst.destroy();
+            self.supplierChartInst = null;
+          }
+
+          var mode     = self.supplierChartMode;
+          var sorted   = (self.rows || []).slice();
+
+          var labels, values, label, color, fmt;
+
+          if (mode === 'lead_time') {
+            sorted.sort(function (a, b) {
+              var av = a.avg_lead_time_days !== null ? parseFloat(a.avg_lead_time_days) : 9999;
+              var bv = b.avg_lead_time_days !== null ? parseFloat(b.avg_lead_time_days) : 9999;
+              return av - bv;
+            });
+            labels = sorted.map(function (r) { return r.supplier_name; });
+            values = sorted.map(function (r) { return r.avg_lead_time_days !== null ? parseFloat(r.avg_lead_time_days) : 0; });
+            label  = 'Th\u1eddi gian giao TB (ng\u00e0y)';
+            color  = sorted.map(function (r) {
+              var d = parseFloat(r.avg_lead_time_days);
+              if (isNaN(d) || d === 0) return 'rgba(148,163,184,0.7)';
+              if (d <= 7)  return 'rgba(34,197,94,0.75)';
+              if (d <= 14) return 'rgba(245,158,11,0.75)';
+              return 'rgba(239,68,68,0.75)';
+            });
+            fmt = function (v) { return v + ' ng\u00e0y'; };
+          } else if (mode === 'cost') {
+            sorted.sort(function (a, b) { return parseFloat(a.avg_cost_per_unit||0) - parseFloat(b.avg_cost_per_unit||0); });
+            labels = sorted.map(function (r) { return r.supplier_name; });
+            values = sorted.map(function (r) { return parseFloat(r.avg_cost_per_unit||0); });
+            label  = 'Chi ph\u00ed TB / \u0111\u01a1n v\u1ecb (\u0111)';
+            color  = 'rgba(99,102,241,0.72)';
+            fmt = function (v) { return new Intl.NumberFormat('vi-VN').format(v) + '\u0111'; };
+          } else {
+            sorted.sort(function (a, b) { return parseFloat(a.total_landed_cost||0) - parseFloat(b.total_landed_cost||0); });
+            labels = sorted.map(function (r) { return r.supplier_name; });
+            values = sorted.map(function (r) { return parseFloat(r.total_landed_cost||0); });
+            label  = 'T\u1ed5ng chi ph\u00ed (\u0111)';
+            color  = 'rgba(20,184,166,0.72)';
+            fmt = function (v) { return new Intl.NumberFormat('vi-VN').format(v) + '\u0111'; };
+          }
+
+          self.supplierChartInst = new Chart(canvas, {
+            type: 'bar',
+            data: {
+              labels: labels,
+              datasets: [{
+                label: label,
+                data: values,
+                backgroundColor: color,
+                borderRadius: 4,
+                borderWidth: 0
+              }]
+            },
+            options: {
+              indexAxis: 'y',
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: {
+                legend: { display: false },
+                tooltip: {
+                  callbacks: {
+                    label: function (ctx) { return ' ' + fmt(ctx.raw); }
+                  }
+                }
+              },
+              scales: {
+                x: {
+                  beginAtZero: true,
+                  ticks: {
+                    color: 'var(--htw-text-muted)',
+                    callback: function (v) { return fmt(v); }
+                  },
+                  grid: { color: 'rgba(255,255,255,0.06)' }
+                },
+                y: {
+                  ticks: { color: 'var(--htw-text)' },
+                  grid: { display: false }
+                }
+              }
+            }
+          });
         },
 
         exportPdf: function () {

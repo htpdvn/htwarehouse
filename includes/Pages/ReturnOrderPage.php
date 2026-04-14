@@ -347,12 +347,38 @@ class ReturnOrderPage
             $ret_code = (string) $wpdb->get_var($wpdb->prepare(
                 "SELECT return_code FROM {$return_table} WHERE id = %d", $return_id
             ));
+
+            // Re-read export order totals AFTER recalculation for the "after" snapshot
+            $export_after = $wpdb->get_row($wpdb->prepare(
+                "SELECT total_revenue, total_cogs, total_profit, status FROM {$export_table} WHERE id = %d",
+                $export_order_id
+            ), ARRAY_A);
+
             ActivityLogger::log(
                 'confirm',
                 'return_order',
                 $return_id,
                 $ret_code,
-                'Xác nhận đơn trả hàng ' . $ret_code . ' — tồn kho đã được hoàn lại'
+                'Xác nhận đơn trả hàng ' . $ret_code . ' — tồn kho đã được hoàn lại',
+                [
+                    'return_order_id' => $return_id,
+                    'export_order_id' => $export_order_id,
+                    'items_count'     => count($return_items),
+                    'total_qty'       => (float) $return_order['total_qty'],
+                    'total_refund'    => (float) $return_order['total_refund'],
+                    'total_cogs_back' => (float) $return_order['total_cogs_back'],
+                ],
+                [
+                    'export_order'  => [
+                        'total_revenue' => isset($export_after['total_revenue']) ? (float) $export_after['total_revenue'] : null,
+                        'total_cogs'    => isset($export_after['total_cogs'])    ? (float) $export_after['total_cogs']    : null,
+                        'total_profit'  => isset($export_after['total_profit'])  ? (float) $export_after['total_profit']  : null,
+                        'status'        => $export_after['status'] ?? null,
+                        'profit_check'  => isset($export_after['total_revenue'], $export_after['total_cogs'])
+                            ? round((float)$export_after['total_revenue'] - (float)$export_after['total_cogs'], 2)
+                            : null,
+                    ],
+                ]
             );
 
             wp_send_json_success('Đã xác nhận đơn trả hàng. Tồn kho đã được hoàn lại.');

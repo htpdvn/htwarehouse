@@ -259,12 +259,31 @@ class ImportPage
 
             $wpdb->query('COMMIT');
 
+            // Snapshot before: per-product locked values (już wczytane)
+            $snap_before = ['products' => []];
+            $snap_after  = ['products' => [], 'extra_cost' => $extra_cost];
+            foreach ($items as $item) {
+                $pid = (int) $item['product_id'];
+                $snap_before['products']['p' . $pid] = [
+                    'stock'    => (float) $locked[$pid]['current_stock'],
+                    'avg_cost' => (float) $locked[$pid]['avg_cost'],
+                ];
+                // After: new stock = old + qty; new avg calculated by CostCalculator
+                $new_stock_after = (float) $locked[$pid]['current_stock'] + (float) $item['qty'];
+                $snap_after['products']['p' . $pid] = [
+                    'stock'                   => $new_stock_after,
+                    'allocated_cost_per_unit' => (float) $item['allocated_cost_per_unit'],
+                ];
+            }
+
             ActivityLogger::log(
                 'confirm',
                 'import_batch',
                 $id,
                 $batch->batch_code,
-                'Xác nhận lô nhập kho ' . $batch->batch_code . ' (' . count($items) . ' sản phẩm) — tồn kho & WAC đã cập nhật'
+                'Xác nhận lô nhập kho ' . $batch->batch_code . ' (' . count($items) . ' sản phẩm) — tồn kho & WAC đã cập nhật',
+                $snap_before,
+                $snap_after
             );
 
             wp_send_json_success('Lô hàng đã được xác nhận. Kho hàng đã được cập nhật.');

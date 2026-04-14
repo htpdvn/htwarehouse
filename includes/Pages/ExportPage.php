@@ -274,12 +274,41 @@ class ExportPage
 
             $wpdb->query('COMMIT');
 
+            // Build financial snapshots for audit trail
+            $snap_before_stock = [];
+            foreach ($stock_check as $pid => $s) {
+                $snap_before_stock['p' . $pid] = ['stock' => $s, 'avg_cost' => $cost_check[$pid]];
+            }
+            $snap_before = [
+                'total_revenue' => (float) $order->total_revenue,
+                'total_cogs'    => (float) $order->total_cogs,
+                'total_profit'  => (float) $order->total_profit,
+                'stock'         => $snap_before_stock,
+            ];
+            $snap_after_stock = [];
+            foreach ($items as $item) {
+                $pid = (int) $item['product_id'];
+                $snap_after_stock['p' . $pid] = [
+                    'stock'    => (float) $stock_check[$pid] - (float) $item['qty'],
+                    'avg_cost' => $cost_check[$pid],
+                ];
+            }
+            $snap_after = [
+                'total_revenue' => (float) $total_revenue,
+                'total_cogs'    => (float) $total_cogs,
+                'total_profit'  => (float) $total_profit,
+                'profit_check'  => round((float)$total_revenue - (float)$total_cogs, 2),
+                'stock'         => $snap_after_stock,
+            ];
+
             ActivityLogger::log(
                 'confirm',
                 'export_order',
                 $id,
                 $order->order_code,
-                'Xác nhận đơn xuất kho ' . $order->order_code . ' (' . count($items) . ' sản phẩm) — tồn kho đã trừ'
+                'Xác nhận đơn xuất kho ' . $order->order_code . ' (' . count($items) . ' sản phẩm) — tồn kho đã trừ',
+                $snap_before,
+                $snap_after
             );
 
             wp_send_json_success('Đơn hàng đã xác nhận. Kho hàng đã được trừ.');

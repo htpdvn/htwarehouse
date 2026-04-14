@@ -240,6 +240,8 @@ class Database
             object_id   BIGINT UNSIGNED NOT NULL DEFAULT 0,
             object_code VARCHAR(100)    NOT NULL DEFAULT '',
             summary     VARCHAR(500)    NOT NULL DEFAULT '',
+            before_data MEDIUMTEXT      NULL DEFAULT NULL,
+            after_data  MEDIUMTEXT      NULL DEFAULT NULL,
             ip_address  VARCHAR(45)     NOT NULL DEFAULT '',
             created_at  DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
@@ -263,5 +265,15 @@ class Database
             "ALTER TABLE {$wpdb->prefix}htw_return_items
              ADD INDEX idx_ri_order_item (return_order_id, export_item_id)"
         );
+
+        // Add before_data / after_data snapshot columns to activity log (idempotent)
+        $columns = $wpdb->get_col("SHOW COLUMNS FROM {$wpdb->prefix}htw_activity_logs LIKE 'before_data'");
+        if (empty($columns)) {
+            $wpdb->query(
+                "ALTER TABLE {$wpdb->prefix}htw_activity_logs
+                 ADD COLUMN before_data MEDIUMTEXT NULL DEFAULT NULL AFTER summary,
+                 ADD COLUMN after_data  MEDIUMTEXT NULL DEFAULT NULL AFTER before_data"
+            );
+        }
     }
 }

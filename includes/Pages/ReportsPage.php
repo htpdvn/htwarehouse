@@ -40,6 +40,9 @@ class ReportsPage
             case 'product_performance':
                 wp_send_json_success(self::report_product_performance($date_from, $date_to));
                 break;
+            case 'supplier_scorecard':
+                wp_send_json_success(self::report_supplier_scorecard($date_from, $date_to));
+                break;
             default:
                 wp_send_json_error('Unknown report type');
         }
@@ -55,7 +58,7 @@ class ReportsPage
         $date_from = sanitize_text_field($_POST['date_from'] ?? '');
         $date_to   = sanitize_text_field($_POST['date_to']   ?? '');
 
-        $allowed = ['stock', 'movement', 'profit_by_product', 'profit_by_channel', 'product_performance'];
+        $allowed = ['stock', 'movement', 'profit_by_product', 'profit_by_channel', 'product_performance', 'supplier_scorecard'];
         if (! in_array($report, $allowed, true)) {
             wp_send_json_error('Loại báo cáo không hợp lệ.');
         }
@@ -102,6 +105,8 @@ class ReportsPage
                 return self::report_profit_channel($from, $to);
             case 'product_performance':
                 return self::report_product_performance($from, $to);
+            case 'supplier_scorecard':
+                return self::report_supplier_scorecard($from, $to);
             default:
                 return [];
         }
@@ -520,4 +525,200 @@ class ReportsPage
             ],
         ];
     }
+
+    // ── Đánh giá Nhà Cung Cấp ────────────────────────────────────────────────
+    /**
+     * Supplier Scorecard Report.
+     *
+     * So sánh các nhà cung cấp theo:
+     *   - Tổng chi phí landing (tiền hàng + tất cả phí)
+     *   - Thời gian giao hàng (ngày đặt → ngày lô nhập được confirm)
+     *
+     * Chỉ tính PO có status IN ('received','paid_off') và lô nhập đã confirmed.
+     */
+    private static function report_supplier_scorecard(string $from, string $to): array
+    {
+        global $wpdb;
+
+        if (empty($from)) $from = date('Y-m-01');
+        if (empty($to))   $to   = date('Y-m-d');
+
+        $rows = $wpdb->get_results($wpdb->prepare(
+            "SELECT
+                COALESCE(po.supplier_id, 0)                                                        AS supplier_id,
+                COALESCE(NULLIF(TRIM(s.name),''), NULLIF(TRIM(po.supplier_name),''), '(Kh\u00f4ng r\u00f5)') AS supplier_name,
+                COUNT(DISTINCT po.id)                                                              AS total_orders,
+                COALESCE(SUM(ii_agg.total_qty), 0)                                                 AS total_qty,
+                SUM(po.goods_total)                                                                AS total_goods,
+                SUM(po.shipping_fee + po.tax_fee + po.service_fee
+                    + po.inspection_fee + po.packing_fee + po.other_fee)                           AS total_fees,
+                SUM(po.goods_total + po.shipping_fee + po.tax_fee + po.service_fee
+                    + po.inspection_fee + po.packing_fee + po.other_fee)                           AS total_landed_cost,
+                AVG(CASE WHEN ib.status = 'confirmed'
+                    THEN DATEDIFF(DATE(ib.updated_at), po.order_date) END)                         AS avg_lead_time_days,
+                MIN(CASE WHEN ib.status = 'confirmed'
+                    THEN DATEDIFF(DATE(ib.updated_at), po.order_date) END)                         AS min_lead_time_days,
+                MAX(CASE WHEN ib.status = 'confirmed'
+                    THEN DATEDIFF(DATE(ib.updated_at), po.order_date) END)                         AS max_lead_time_days,
+                COUNT(DISTINCT CASE WHEN ib.status = 'confirmed' THEN po.id END)                   AS received_orders
+             FROM {$wpdb->prefix}htw_purchase_orders po
+             LEFT JOIN {$wpdb->prefix}htw_suppliers s ON s.id = po.supplier_id
+             LEFT JOIN {$wpdb->prefix}htw_import_batches ib ON ib.id = po.import_batch_id
+             LEFT JOIN (
+                 SELECT batch_id, SUM(qty) AS total_qty
+                 FROM {$wpdb->prefix}htw_import_items
+                 GROUP BY batch_id
+             ) ii_agg ON ii_agg.batch_id = po.import_batch_id
+             WHERE po.status IN ('received','paid_off')
+               AND po.order_date BETWEEN %s AND %s
+             GROUP BY COALESCE(po.supplier_id, 0)
+             ORDER BY avg_lead_time_days ASC, total_landed_cost ASC",
+            $from,
+            $to
+        ), ARRAY_A);
+
+        // Tính derived fields
+        foreach ($rows as &$row) {
+            $total_qty         = (float) $row['total_qty'];
+            $total_landed_cost = (float) $row['total_landed_cost'];
+            $total_fees        = (float) $row['total_fees'];
+            $total_orders      = (int)   $row['total_orders'];
+
+            $row['avg_cost_per_unit'] = ($total_qty > 0)
+                ? round($total_landed_cost / $total_qty, 2)
+                : 0.0;
+
+            $row['fee_ratio_pct'] = ($total_landed_cost > 0)
+                ? round($total_fees / $total_landed_cost * 100, 1)
+                : 0.0;
+
+            // Phí phát sinh trung bình cho mỗi lần đặt hàng
+            $row['avg_fee_per_order'] = ($total_orders > 0)
+                ? round($total_fees / $total_orders, 0)
+                : 0.0;
+
+            // Cast numerics
+            $row['total_orders']       = $total_orders;
+            $row['received_orders']    = (int)   $row['received_orders'];
+            $row['total_qty']          = $total_qty;
+            $row['total_goods']        = (float) $row['total_goods'];
+            $row['total_fees']         = $total_fees;
+            $row['total_landed_cost']  = $total_landed_cost;
+            $row['avg_lead_time_days'] = $row['avg_lead_time_days'] !== null ? round((float)$row['avg_lead_time_days'], 1) : null;
+            $row['min_lead_time_days'] = $row['min_lead_time_days'] !== null ? (int) $row['min_lead_time_days'] : null;
+            $row['max_lead_time_days'] = $row['max_lead_time_days'] !== null ? (int) $row['max_lead_time_days'] : null;
+        }
+        unset($row);
+
+        // ── So sánh giá theo SKU chung ────────────────────────────────────────
+        // Tìm các SKU mua từ ≥2 NCC trong kỳ — phân bổ phí tỉ lệ theo giá trị hàng.
+        // Công thức: total_cost_per_unit = avg_unit_price + allocated_fee_per_unit
+        //   allocated_fee_per_unit = (goods_value_of_sku / po.goods_total) * po.total_fees / sku_qty
+        $sku_raw = $wpdb->get_results($wpdb->prepare(
+            "SELECT
+                p.id                                                             AS product_id,
+                p.sku,
+                p.name                                                           AS product_name,
+                p.unit,
+                COALESCE(po.supplier_id, 0)                                      AS supplier_id,
+                COALESCE(NULLIF(TRIM(s.name),''), NULLIF(TRIM(po.supplier_name),''), '(Kh\u00f4ng r\u00f5)') AS supplier_name,
+                SUM(poi.qty)                                                     AS total_qty,
+                AVG(poi.unit_price)                                              AS avg_unit_price,
+                SUM(poi.unit_price * poi.qty)                                    AS goods_value,
+                SUM(
+                    CASE WHEN po.goods_total > 0
+                    THEN (poi.unit_price * poi.qty / po.goods_total)
+                         * (po.shipping_fee + po.tax_fee + po.service_fee
+                            + po.inspection_fee + po.packing_fee + po.other_fee)
+                    ELSE 0 END
+                ) / NULLIF(SUM(poi.qty), 0)                                      AS allocated_fee_per_unit
+             FROM {$wpdb->prefix}htw_purchase_orders po
+             JOIN {$wpdb->prefix}htw_purchase_order_items poi ON poi.po_id = po.id
+             JOIN {$wpdb->prefix}htw_products p ON p.id = poi.product_id
+             LEFT JOIN {$wpdb->prefix}htw_suppliers s ON s.id = po.supplier_id
+             WHERE po.status IN ('received','paid_off')
+               AND po.order_date BETWEEN %s AND %s
+               AND po.goods_total > 0
+             GROUP BY p.id, p.sku, p.name, p.unit, COALESCE(po.supplier_id, 0)
+             ORDER BY p.name ASC, avg_unit_price ASC",
+            $from,
+            $to
+        ), ARRAY_A);
+
+        // Nhóm theo product_id, chỉ giữ những SKU xuất hiện ở ≥2 NCC
+        $by_product = [];
+        foreach ($sku_raw as $sr) {
+            $pid = (int) $sr['product_id'];
+            if (!isset($by_product[$pid])) {
+                $by_product[$pid] = [
+                    'product_id'   => $pid,
+                    'sku'          => $sr['sku'],
+                    'product_name' => $sr['product_name'],
+                    'unit'         => $sr['unit'],
+                    'suppliers'    => [],
+                ];
+            }
+            $avg_unit     = (float) $sr['avg_unit_price'];
+            $fee_per_unit = ($sr['allocated_fee_per_unit'] !== null) ? (float) $sr['allocated_fee_per_unit'] : 0.0;
+            $by_product[$pid]['suppliers'][] = [
+                'supplier_id'          => (int)   $sr['supplier_id'],
+                'supplier_name'        => $sr['supplier_name'],
+                'total_qty'            => (float) $sr['total_qty'],
+                'avg_unit_price'       => round($avg_unit, 2),
+                'allocated_fee_per_unit' => round($fee_per_unit, 2),
+                'total_cost_per_unit'  => round($avg_unit + $fee_per_unit, 2),
+            ];
+        }
+
+        // Lọc chỉ giữ SKU có ≥2 NCC, đánh dấu NCC rẻ nhất
+        $sku_comparison = [];
+        foreach ($by_product as $item) {
+            if (count($item['suppliers']) < 2) continue;
+
+            // Tìm total_cost_per_unit thấp nhất
+            $min_cost = min(array_column($item['suppliers'], 'total_cost_per_unit'));
+            foreach ($item['suppliers'] as &$sup) {
+                $sup['is_cheapest'] = (abs($sup['total_cost_per_unit'] - $min_cost) < 0.01);
+            }
+            unset($sup);
+
+            // Sắp xếp rẻ nhất lên đầu
+            usort($item['suppliers'], fn($a, $b) => $a['total_cost_per_unit'] <=> $b['total_cost_per_unit']);
+            $sku_comparison[] = $item;
+        }
+
+        // ── KPI Cards ────────────────────────────────────────────────────────
+        $with_lead_time = array_filter($rows, fn($r) => $r['avg_lead_time_days'] !== null);
+
+        // Giao nhanh nhất (avg_lead_time_days thấp nhất)
+        $fastest = $with_lead_time ? array_reduce(
+            array_values($with_lead_time),
+            fn($carry, $r) => (!$carry || $r['avg_lead_time_days'] < $carry['avg_lead_time_days']) ? $r : $carry
+        ) : null;
+
+        // Phí phát sinh/đơn thấp nhất (so sánh được - không phụ thuộc vào loại hàng)
+        $cheapest_fee = $rows ? array_reduce(
+            array_values($rows),
+            fn($carry, $r) => (!$carry || $r['avg_fee_per_order'] < $carry['avg_fee_per_order']) ? $r : $carry
+        ) : null;
+
+        // Nhiều đơn nhất
+        $most_orders = $rows ? array_reduce(
+            array_values($rows),
+            fn($carry, $r) => (!$carry || $r['total_orders'] > $carry['total_orders']) ? $r : $carry
+        ) : null;
+
+        return [
+            'rows'           => array_values($rows),
+            'date_from'      => $from,
+            'date_to'        => $to,
+            'sku_comparison' => array_values($sku_comparison),
+            'kpi'            => [
+                'fastest'      => $fastest,
+                'cheapest_fee' => $cheapest_fee,
+                'most_orders'  => $most_orders,
+            ],
+        ];
+    }
 }
+
