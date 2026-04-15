@@ -113,7 +113,7 @@ $products = $wpdb->get_results("SELECT * FROM {$wpdb->prefix}htw_products ORDER 
                     <select class="htw-select" x-model="form.supplier_id" @change="form.supplier = suppliersList.find(function(s){return s.id==form.supplier_id}) ? suppliersList.find(function(s){return s.id==form.supplier_id}).name : ''">
                         <option value="0">-- Khác / Tự nhập --</option>
                         <template x-for="s in suppliersList" :key="s.id">
-                            <option :value="s.id" x-text="s.name + (s.phone ? ' (' + s.phone + ')' : '')"></option>
+                            <option :value="s.id" x-text="(s.supplier_code ? '['+s.supplier_code+'] ' : '') + s.name + (s.phone ? ' (' + s.phone + ')' : '')"></option>
                         </template>
                     </select>
                 </div>

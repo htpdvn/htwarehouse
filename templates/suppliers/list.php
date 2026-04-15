@@ -47,6 +47,7 @@ $suppliers = $wpdb->get_results(
         <table class="htw-table">
             <thead>
                 <tr>
+                    <th>Mã NCC</th>
                     <th>Tên NCC</th>
                     <th>Người liên hệ</th>
                     <th>Điện thoại</th>
@@ -60,6 +61,9 @@ $suppliers = $wpdb->get_results(
             <tbody>
                 <template x-for="s in filtered" :key="s.id">
                     <tr>
+                        <td>
+                            <span class="htw-badge htw-badge-info" style="font-family:monospace;letter-spacing:.5px;" x-text="s.supplier_code || '—'"></span>
+                        </td>
                         <td>
                             <div
                                 style="font-weight:600;color:var(--htw-primary);cursor:pointer;text-decoration:underline;text-underline-offset:3px;"
@@ -86,7 +90,7 @@ $suppliers = $wpdb->get_results(
                 </template>
                 <template x-if="!filtered.length">
                     <tr>
-                        <td colspan="8" style="text-align:center;color:var(--htw-text-muted);padding:32px;">
+                        <td colspan="9" style="text-align:center;color:var(--htw-text-muted);padding:32px;">
                             <span x-show="search">Không tìm thấy nhà cung cấp phù hợp.</span>
                             <span x-show="!search">Chưa có nhà cung cấp nào.</span>
                         </td>
@@ -105,6 +109,11 @@ $suppliers = $wpdb->get_results(
             </div>
 
             <div class="htw-form-grid" style="grid-template-columns:repeat(2,1fr);">
+                <div class="htw-field">
+                    <label class="htw-label">Mã NCC <span style="font-size:.75rem;color:var(--htw-text-muted);">(tự sinh nếu để trống)</span></label>
+                    <input class="htw-input" type="text" x-model="form.supplier_code" placeholder="VD: NCC-0001" style="width:100%;font-family:monospace;" :disabled="!!form.id" :style="form.id ? 'opacity:.7;background:var(--htw-surface-2);' : ''">
+                    <div x-show="form.id" style="font-size:.72rem;color:var(--htw-text-muted);margin-top:3px;">Mã NCC không thể thay đổi sau khi tạo.</div>
+                </div>
                 <div class="htw-field">
                     <label class="htw-label">Tên nhà cung cấp <span style="color:var(--htw-danger);">*</span></label>
                     <input class="htw-input" type="text" x-model="form.name" placeholder="VD: Công ty TNHH ABC" style="width:100%;">
@@ -156,7 +165,13 @@ $suppliers = $wpdb->get_results(
                 <div style="display:flex;align-items:center;gap:10px;">
                     <span class="dashicons dashicons-building" style="font-size:22px;"></span>
                     <div>
-                        <div x-text="txData.supplier ? txData.supplier.name : ''" style="font-size:1.1rem;font-weight:700;"></div>
+                        <div style="display:flex;align-items:center;gap:8px;">
+                            <div x-text="txData.supplier ? txData.supplier.name : ''" style="font-size:1.1rem;font-weight:700;"></div>
+                            <span x-show="txData.supplier && txData.supplier.supplier_code"
+                                  x-text="txData.supplier ? txData.supplier.supplier_code : ''"
+                                  class="htw-badge htw-badge-info"
+                                  style="font-family:monospace;font-size:.75rem;"></span>
+                        </div>
                         <div x-show="txData.supplier && txData.supplier.phone" x-text="'📞 ' + (txData.supplier ? txData.supplier.phone : '')" style="font-size:.8rem;opacity:.7;margin-top:2px;"></div>
                     </div>
                 </div>

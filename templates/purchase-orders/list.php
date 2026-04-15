@@ -14,6 +14,7 @@ $pos = $wpdb->get_results(
             ib.batch_code AS import_batch_code,
             ib.status AS import_batch_status,
             COALESCE(s.name, po.supplier_name, '') AS supplier_full_name,
+            s.supplier_code AS supplier_code_ref,
             (SELECT COUNT(*) FROM {$wpdb->prefix}htw_purchase_order_items WHERE po_id = po.id) AS item_count
      FROM {$wpdb->prefix}htw_purchase_orders po
      LEFT JOIN {$wpdb->prefix}htw_import_batches ib ON ib.id = po.import_batch_id
@@ -74,7 +75,15 @@ window._htwSuppliersList = <?php echo wp_json_encode($suppliers); ?>;
                 <template x-for="po in pos" :key="po.id">
                     <tr>
                         <td style="font-weight:600;color:var(--htw-primary);" x-text="po.po_code"></td>
-                        <td x-text="(po.supplier_full_name || po.supplier_name || '').trim() || '—'"></td>
+                        <td>
+                            <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;">
+                                <span x-show="po.supplier_code_ref"
+                                      x-text="po.supplier_code_ref"
+                                      class="htw-badge htw-badge-info"
+                                      style="font-family:monospace;font-size:.72rem;letter-spacing:.4px;"></span>
+                                <span x-text="(po.supplier_full_name || po.supplier_name || '').trim() || '—'"></span>
+                            </div>
+                        </td>
                         <td x-text="fmtDate(po.order_date)"></td>
                         <td x-text="po.item_count"></td>
                         <td style="font-weight:600;" x-text="fmt(po.total_amount || 0)"></td>
@@ -148,7 +157,14 @@ window._htwSuppliersList = <?php echo wp_json_encode($suppliers); ?>;
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
                     <div>
                         <div class="htw-info-row"><span class="htw-info-label">Mã đơn:</span> <strong x-text="detail.po_code"></strong></div>
-                        <div class="htw-info-row"><span class="htw-info-label">Nhà cung cấp:</span> <span x-text="(detail.supplier_full_name || detail.supplier_name || '—')"></span></div>
+                        <div class="htw-info-row">
+                            <span class="htw-info-label">Nhà cung cấp:</span>
+                            <span x-show="detail.supplier_code_ref"
+                                  x-text="detail.supplier_code_ref"
+                                  class="htw-badge htw-badge-info"
+                                  style="font-family:monospace;font-size:.72rem;margin-right:4px;"></span>
+                            <span x-text="(detail.supplier_full_name || detail.supplier_name || '—')"></span>
+                        </div>
                         <div class="htw-info-row"><span class="htw-info-label">Người liên hệ:</span> <span x-text="detail.supplier_contact || '—'"></span></div>
                         <div class="htw-info-row"><span class="htw-info-label">Điện thoại:</span> <span x-text="detail.supplier_phone || '—'"></span></div>
                         <div class="htw-info-row"><span class="htw-info-label">Địa chỉ:</span> <span x-text="detail.supplier_address || '—'"></span></div>
@@ -299,7 +315,7 @@ window._htwSuppliersList = <?php echo wp_json_encode($suppliers); ?>;
                     <select class="htw-select" x-model="form.supplier_id" @change="onSupplierChange()">
                         <option value="0">-- Chọn NCC --</option>
                         <?php foreach ($suppliers as $s): ?>
-                        <option value="<?php echo (int)$s['id']; ?>"><?php echo esc_html($s['name']); ?></option>
+                        <option value="<?php echo (int)$s['id']; ?>"><?php echo esc_html(($s['supplier_code'] ? '[' . $s['supplier_code'] . '] ' : '') . $s['name']); ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>

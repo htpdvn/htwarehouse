@@ -28,6 +28,7 @@ class SuppliersPage
         $table = $wpdb->prefix . 'htw_suppliers';
 
         $id           = absint($_POST['id'] ?? 0);
+        $supplier_code = sanitize_text_field($_POST['supplier_code'] ?? '');
         $name         = sanitize_text_field($_POST['name'] ?? '');
         $contact_name = sanitize_text_field($_POST['contact_name'] ?? '');
         $phone        = sanitize_text_field($_POST['phone'] ?? '');
@@ -40,15 +41,37 @@ class SuppliersPage
             wp_send_json_error('Tên nhà cung cấp không được để trống.');
         }
 
-        $data = compact('name', 'contact_name', 'phone', 'email', 'address', 'tax_code', 'notes');
-        $fmt  = ['%s', '%s', '%s', '%s', '%s', '%s', '%s'];
+        // Auto-generate supplier_code if empty
+        if (empty($supplier_code)) {
+            $attempts = 0;
+            do {
+                $supplier_code = 'NCC-' . strtoupper(bin2hex(random_bytes(2)));
+                $exists = $wpdb->get_var($wpdb->prepare(
+                    "SELECT id FROM {$table} WHERE supplier_code = %s AND id != %d",
+                    $supplier_code, $id
+                ));
+                $attempts++;
+            } while ($exists && $attempts < 10);
+        } else {
+            // Validate uniqueness of manually entered code
+            $exists = $wpdb->get_var($wpdb->prepare(
+                "SELECT id FROM {$table} WHERE supplier_code = %s AND id != %d",
+                $supplier_code, $id
+            ));
+            if ($exists) {
+                wp_send_json_error('Mã NCC "' . $supplier_code . '" đã tồn tại. Vui lòng dùng mã khác.');
+            }
+        }
+
+        $data = compact('supplier_code', 'name', 'contact_name', 'phone', 'email', 'address', 'tax_code', 'notes');
+        $fmt  = ['%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s'];
 
         if ($id > 0) {
             $updated = $wpdb->update($table, $data, ['id' => $id], $fmt, ['%d']);
             if ($updated === false) {
                 wp_send_json_error('Lỗi cập nhật: ' . $wpdb->last_error);
             }
-            ActivityLogger::log('update', 'supplier', $id, $name, 'Cập nhật nhà cung cấp: ' . $name);
+            ActivityLogger::log('update', 'supplier', $id, $supplier_code, 'Cập nhật nhà cung cấp: ' . $name . ' [' . $supplier_code . ']');
             wp_send_json_success(['message' => 'Đã cập nhật nhà cung cấp.']);
         } else {
             $inserted = $wpdb->insert($table, $data, $fmt);
@@ -56,8 +79,8 @@ class SuppliersPage
                 wp_send_json_error('Lỗi thêm mới: ' . $wpdb->last_error);
             }
             $new_id = $wpdb->insert_id;
-            ActivityLogger::log('create', 'supplier', $new_id, $name, 'Tạo mới nhà cung cấp: ' . $name);
-            wp_send_json_success(['id' => $new_id, 'message' => 'Đã thêm nhà cung cấp.']);
+            ActivityLogger::log('create', 'supplier', $new_id, $supplier_code, 'Tạo mới nhà cung cấp: ' . $name . ' [' . $supplier_code . ']');
+            wp_send_json_success(['id' => $new_id, 'supplier_code' => $supplier_code, 'message' => 'Đã thêm nhà cung cấp.']);
         }
     }
 

@@ -9,9 +9,9 @@
     <!-- KPI Cards -->
     <div class="htw-kpi-grid">
         <div class="htw-kpi-card purple">
-            <div class="htw-kpi-label">Tổng sản phẩm</div>
-            <div class="htw-kpi-value" x-text="kpi.total_products ?? '—'"></div>
-            <div class="htw-kpi-sub">Trong danh mục</div>
+            <div class="htw-kpi-label">Tổng tồn kho</div>
+            <div class="htw-kpi-value" x-text="kpi.total_stock_qty !== undefined ? fmtNum(kpi.total_stock_qty, 0) : '—'"></div>
+            <div class="htw-kpi-sub">Tổng số lượng đang tồn</div>
         </div>
         <div class="htw-kpi-card blue">
             <div class="htw-kpi-label">Giá trị tồn kho</div>

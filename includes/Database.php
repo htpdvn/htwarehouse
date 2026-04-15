@@ -8,7 +8,7 @@ class Database
 {
 
     const DB_VERSION_OPTION = 'htw_db_version';
-    const DB_VERSION        = '2.0.0';
+    const DB_VERSION        = '2.1.0';
 
     public static function install(): void
     {
@@ -156,17 +156,19 @@ class Database
         ) $charset;";
 
         $sql[] = "CREATE TABLE {$wpdb->prefix}htw_suppliers (
-            id           BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-            name         VARCHAR(255)    NOT NULL,
-            contact_name VARCHAR(255)    NOT NULL DEFAULT '',
-            phone        VARCHAR(50)     NOT NULL DEFAULT '',
-            email        VARCHAR(100)    NOT NULL DEFAULT '',
-            address      TEXT            NOT NULL DEFAULT '',
-            tax_code     VARCHAR(50)     NOT NULL DEFAULT '',
-            notes        TEXT            NOT NULL DEFAULT '',
-            created_at   DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            updated_at   DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            id              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            supplier_code   VARCHAR(50)     NOT NULL DEFAULT '',
+            name            VARCHAR(255)    NOT NULL,
+            contact_name    VARCHAR(255)    NOT NULL DEFAULT '',
+            phone           VARCHAR(50)     NOT NULL DEFAULT '',
+            email           VARCHAR(100)    NOT NULL DEFAULT '',
+            address         TEXT            NOT NULL DEFAULT '',
+            tax_code        VARCHAR(50)     NOT NULL DEFAULT '',
+            notes           TEXT            NOT NULL DEFAULT '',
+            created_at      DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at      DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
+            UNIQUE KEY supplier_code (supplier_code),
             KEY name (name)
         ) $charset;";
 
@@ -275,5 +277,26 @@ class Database
                  ADD COLUMN after_data  MEDIUMTEXT NULL DEFAULT NULL AFTER before_data"
             );
         }
+
+        // Add supplier_code column to htw_suppliers for human-readable identification (idempotent)
+        $sc_col = $wpdb->get_col("SHOW COLUMNS FROM {$wpdb->prefix}htw_suppliers LIKE 'supplier_code'");
+        if (empty($sc_col)) {
+            $wpdb->query(
+                "ALTER TABLE {$wpdb->prefix}htw_suppliers
+                 ADD COLUMN supplier_code VARCHAR(50) NOT NULL DEFAULT '' AFTER id"
+            );
+        }
+        // Add unique index if not exists (idempotent via IF NOT EXISTS not available in older MySQL, use try/catch style)
+        $sc_idx = $wpdb->get_results("SHOW INDEX FROM {$wpdb->prefix}htw_suppliers WHERE Key_name = 'supplier_code'");
+        if (empty($sc_idx)) {
+            $wpdb->query("ALTER TABLE {$wpdb->prefix}htw_suppliers ADD UNIQUE KEY supplier_code (supplier_code)");
+        }
+
+        // Back-fill supplier_code for existing suppliers that have none (using NCC-{id} pattern)
+        $wpdb->query(
+            "UPDATE {$wpdb->prefix}htw_suppliers
+             SET supplier_code = CONCAT('NCC-', LPAD(id, 4, '0'))
+             WHERE supplier_code = '' OR supplier_code IS NULL"
+        );
     }
 }

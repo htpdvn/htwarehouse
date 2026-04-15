@@ -215,7 +215,8 @@
           }
         },
 
-        fmt: HTWApp.fmt
+        fmt:    HTWApp.fmt,
+        fmtNum: HTWApp.fmtNum
       };
     });
 
@@ -1129,6 +1130,10 @@
           return (this.rows || []).reduce(function (s, r) { return s + parseFloat(r.inventory_value||0); }, 0);
         },
 
+        get totalStock() {
+          return (this.rows || []).reduce(function (s, r) { return s + parseFloat(r.current_stock||0); }, 0);
+        },
+
         get totalRevenue() {
           return (this.rows || []).reduce(function (s, r) { return s + parseFloat(r.total_revenue||r.revenue||0); }, 0);
         },
@@ -1789,7 +1794,7 @@
         modal:    false,
         saving:   false,
         form: {
-          id: 0, name: '', contact_name: '', phone: '',
+          id: 0, supplier_code: '', name: '', contact_name: '', phone: '',
           email: '', address: '', tax_code: '', notes: ''
         },
 
@@ -1803,7 +1808,8 @@
           var q = this.search.toLowerCase().trim();
           if (!q) return this.suppliers;
           return this.suppliers.filter(function (s) {
-            return (s.name || '').toLowerCase().includes(q)
+            return (s.supplier_code || '').toLowerCase().includes(q)
+                || (s.name || '').toLowerCase().includes(q)
                 || (s.phone || '').toLowerCase().includes(q)
                 || (s.email || '').toLowerCase().includes(q)
                 || (s.tax_code || '').toLowerCase().includes(q);
@@ -1823,13 +1829,14 @@
         },
 
         openAdd: function () {
-          this.form = { id: 0, name: '', contact_name: '', phone: '', email: '', address: '', tax_code: '', notes: '' };
+          this.form = { id: 0, supplier_code: '', name: '', contact_name: '', phone: '', email: '', address: '', tax_code: '', notes: '' };
           this.modal = true;
         },
 
         openEdit: function (s) {
           this.form = {
-            id: s.id, name: s.name || '', contact_name: s.contact_name || '',
+            id: s.id, supplier_code: s.supplier_code || '', name: s.name || '',
+            contact_name: s.contact_name || '',
             phone: s.phone || '', email: s.email || '',
             address: s.address || '', tax_code: s.tax_code || '',
             notes: s.notes || ''
@@ -1891,14 +1898,15 @@
           }
           self.saving = true;
           HTWApp.request('htw_save_supplier', {
-            id:          self.form.id,
-            name:        self.form.name,
-            contact_name: self.form.contact_name,
-            phone:       self.form.phone,
-            email:       self.form.email,
-            address:     self.form.address,
-            tax_code:    self.form.tax_code,
-            notes:       self.form.notes
+            id:            self.form.id,
+            supplier_code: self.form.supplier_code,
+            name:          self.form.name,
+            contact_name:  self.form.contact_name,
+            phone:         self.form.phone,
+            email:         self.form.email,
+            address:       self.form.address,
+            tax_code:      self.form.tax_code,
+            notes:         self.form.notes
           }, function (res) {
             self.saving = false;
             if (res.success) { self.modal = false; location.reload(); }

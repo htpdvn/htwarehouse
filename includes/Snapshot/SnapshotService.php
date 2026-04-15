@@ -25,6 +25,7 @@ class SnapshotService
             $wpdb->prefix . 'htw_export_items',
             $wpdb->prefix . 'htw_import_items',
             $wpdb->prefix . 'htw_return_items',
+            $wpdb->prefix . 'htw_activity_logs',
             // Parent tables
             $wpdb->prefix . 'htw_purchase_orders',
             $wpdb->prefix . 'htw_export_orders',
@@ -47,12 +48,13 @@ class SnapshotService
             $wpdb->prefix . 'htw_export_items'         => 'htw_export_items',
             $wpdb->prefix . 'htw_import_items'         => 'htw_import_items',
             $wpdb->prefix . 'htw_return_items'         => 'htw_return_items',
+            $wpdb->prefix . 'htw_activity_logs'        => 'htw_activity_logs',
             $wpdb->prefix . 'htw_purchase_orders'      => 'htw_purchase_orders',
-            $wpdb->prefix . 'htw_export_orders'         => 'htw_export_orders',
+            $wpdb->prefix . 'htw_export_orders'        => 'htw_export_orders',
             $wpdb->prefix . 'htw_return_orders'        => 'htw_return_orders',
-            $wpdb->prefix . 'htw_import_batches'        => 'htw_import_batches',
-            $wpdb->prefix . 'htw_products'              => 'htw_products',
-            $wpdb->prefix . 'htw_suppliers'             => 'htw_suppliers',
+            $wpdb->prefix . 'htw_import_batches'       => 'htw_import_batches',
+            $wpdb->prefix . 'htw_products'             => 'htw_products',
+            $wpdb->prefix . 'htw_suppliers'            => 'htw_suppliers',
         ];
     }
 
@@ -270,10 +272,17 @@ class SnapshotService
                         ));
                     }
 
+                    // Tables whose timestamps must be preserved verbatim (audit trail).
+                    $preserve_timestamps = [ 'htw_activity_logs' ];
+
                     foreach ($rows as $row) {
-                        // Remove created_at/updated_at — let DB use DEFAULT
-                        unset($row['created_at']);
-                        unset($row['updated_at']);
+                        // For audit-trail tables keep the original timestamps so the
+                        // restored log is historically accurate. For all other tables,
+                        // drop them and let the DB DEFAULT fire (avoids NOT NULL issues).
+                        if (! in_array($short_key, $preserve_timestamps, true)) {
+                            unset($row['created_at']);
+                            unset($row['updated_at']);
+                        }
                         // Keep original 'id' — preserves FK references in child tables
 
                         $result = $wpdb->insert($table, $row);

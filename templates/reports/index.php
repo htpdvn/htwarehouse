@@ -37,9 +37,11 @@
     <!-- ══ Tồn kho ══ -->
     <template x-if="!loading && tab === 'stock'">
         <div>
-            <div style="margin-bottom:14px;display:flex;align-items:center;gap:16px;">
-                <span style="color:var(--htw-text-muted);font-size:.85rem;" x-text="rows.length + ' sản phẩm'"></span>
-                <span>|</span>
+            <div style="margin-bottom:14px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
+                <span style="color:var(--htw-text-muted);font-size:.85rem;" x-text="rows.length + ' dòng sản phẩm'"></span>
+                <span style="color:var(--htw-text-muted);">|</span>
+                <span style="font-size:.9rem;">Tổng số lượng tồn kho: <strong style="color:var(--htw-success);" x-text="fmtNum(totalStock, 0) + ' sản phẩm'"></strong></span>
+                <span style="color:var(--htw-text-muted);">|</span>
                 <span style="font-size:.9rem;">Tổng giá trị kho: <strong style="color:var(--htw-info);" x-text="fmt(totalInvValue)"></strong></span>
             </div>
             <div class="htw-table-wrap">
@@ -50,9 +52,9 @@
                             <th>Tên sản phẩm</th>
                             <th>Danh mục</th>
                             <th>ĐVT</th>
-                            <th>Tồn kho</th>
+                            <th>SL tồn kho</th>
                             <th>Giá vốn TB</th>
-                            <th>Giá trị kho</th>
+                            <th>Giá trị lưu kho</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -509,7 +511,12 @@
                         <template x-for="r in supplierRows" :key="r.supplier_id + '_' + r.supplier_name">
                             <tr>
                                 <td>
-                                    <div style="font-weight:600;" x-text="r.supplier_name"></div>
+                                    <div style="display:flex;align-items:center;gap:6px;">
+                                        <span x-show="r.supplier_code" x-text="r.supplier_code"
+                                              class="htw-badge htw-badge-info"
+                                              style="font-family:monospace;font-size:.72rem;letter-spacing:.5px;"></span>
+                                        <span style="font-weight:600;" x-text="r.supplier_name"></span>
+                                    </div>
                                     <div style="font-size:.75rem;color:var(--htw-text-muted);" x-text="r.total_orders + ' đơn · ' + fmtNum(r.total_qty,0) + ' sản phẩm'"></div>
                                 </td>
                                 <td style="text-align:right;font-weight:600;" x-text="r.total_orders"></td>
@@ -583,7 +590,14 @@
                                     <tbody>
                                         <template x-for="sup in item.suppliers" :key="sup.supplier_id">
                                             <tr :style="{background: sup.is_cheapest ? 'rgba(34,197,94,0.06)' : ''}">
-                                                <td style="font-weight:600;" x-text="sup.supplier_name"></td>
+                                                <td style="font-weight:600;">
+                                                    <div style="display:flex;align-items:center;gap:5px;">
+                                                        <span x-show="sup.supplier_code" x-text="sup.supplier_code"
+                                                              class="htw-badge htw-badge-info"
+                                                              style="font-family:monospace;font-size:.7rem;"></span>
+                                                        <span x-text="sup.supplier_name"></span>
+                                                    </div>
+                                                </td>
                                                 <td style="text-align:right;" x-text="fmtNum(sup.total_qty, 0)"></td>
                                                 <td style="text-align:right;" x-text="fmt(sup.avg_unit_price)"></td>
                                                 <td style="text-align:right;color:var(--htw-warning);" x-text="fmt(sup.allocated_fee_per_unit)"></td>

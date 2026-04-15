@@ -280,9 +280,9 @@ class PdfService
         $this->cellL($l + 2 + $cols[0], $y + 1.5, $cols[1], $h, 'Tên Sản Phẩm');
         $this->cellL($l + 2 + $cols[0] + $cols[1], $y + 1.5, $cols[2], $h, 'Danh Mục');
         $this->cellL($l + $cols[0] + $cols[1] + $cols[2] + 2, $y + 1.5, $cols[3], $h, 'ĐVT');
-        $this->cellL($l + $cols[0] + $cols[1] + $cols[2] + $cols[3] + 2, $y + 1.5, $cols[4], $h, 'Tồn Kho');
-        $this->cellL($l + $cols[0] + $cols[1] + $cols[2] + $cols[3] + $cols[4] + 2, $y + 1.5, $cols[5], $h, 'Giá TB');
-        $this->cellL($l + $cols[0] + $cols[1] + $cols[2] + $cols[3] + $cols[4] + $cols[5] + 2, $y + 1.5, $cols[6], $h, 'Giá Trị');
+        $this->cellL($l + $cols[0] + $cols[1] + $cols[2] + $cols[3] + 2, $y + 1.5, $cols[4], $h, 'SL Tồn Kho');
+        $this->cellL($l + $cols[0] + $cols[1] + $cols[2] + $cols[3] + $cols[4] + 2, $y + 1.5, $cols[5], $h, 'Giá Vốn TB');
+        $this->cellL($l + $cols[0] + $cols[1] + $cols[2] + $cols[3] + $cols[4] + $cols[5] + 2, $y + 1.5, $cols[6], $h, 'Giá Trị Lưu Kho');
 
         $y += $h;
 
@@ -290,7 +290,8 @@ class PdfService
         $this->bd(self::C_LINER);
         $this->pdf->SetLineWidth(0.1);
 
-        $totalVal = 0.0;
+        $totalVal   = 0.0;
+        $totalStock = 0.0;
         foreach ($rows as $i => $r) {
             if ($i % 2 === 1) $this->rect($l, $y, $w, $rh, self::C_ALT);
             $this->line($l, $y + $rh, $re, $y + $rh, self::C_LINER, 0.1);
@@ -298,7 +299,8 @@ class PdfService
             $stock   = (float) ($r['current_stock'] ?? 0);
             $invVal  = (float) ($r['inventory_value'] ?? 0);
             $avgCost = (float) ($r['avg_cost'] ?? 0);
-            $totalVal += $invVal;
+            $totalVal   += $invVal;
+            $totalStock += $stock;
 
             $ty = $y + 1.2;
 
@@ -322,8 +324,12 @@ class PdfService
         $this->line($l, $y + $th, $l + $w, $y + $th, self::C_BLACK, 0.5);
 
         $this->f(self::FONT_B, 8, self::C_BLACK);
-        $this->cellL($l + 4, $y + 2.5, $cols[0] + $cols[1] + $cols[2] + $cols[3] + $cols[4] + 20, $th, count($rows) . '  sản phẩm');
-        $this->cellL($l + $cols[0] + $cols[1] + $cols[2] + $cols[3] + $cols[4] + $cols[5] + 2, $y + 2.5, $cols[6], $th, $this->m($totalVal) . '  ' . $this->currency);
+        // "X dòng sản phẩm" — thẳng hàng cột Tên Sản Phẩm / Danh Mục (col[1])
+        $this->cellL($l + $cols[0] + 2, $y, $cols[1] + $cols[2], $th, count($rows) . '  dòng sản phẩm');
+        // Tổng SL Tồn Kho — thẳng hàng cột SL Tồn Kho (col[4])
+        $this->cellL($l + $cols[0] + $cols[1] + $cols[2] + $cols[3] + 2, $y, $cols[4], $th, $this->n($totalStock));
+        // Tổng Giá Trị Lưu Kho — thẳng hàng cột Giá Trị Lưu Kho (col[6])
+        $this->cellL($l + $cols[0] + $cols[1] + $cols[2] + $cols[3] + $cols[4] + $cols[5] + 2, $y, $cols[6], $th, $this->m($totalVal));
 
         return $y + $th;
     }
@@ -721,7 +727,7 @@ $this->cellL($l + $cols[0] + $cols[1] + 4, $ty, $cols[2], $rh, $this->m($rev));
             $this->line($rx + 4, $lineY, $rx + $colW - 4, $lineY, self::C_LINER, 0.3);
 
             $this->f(self::FONT, 7.5, self::C_SLATE);
-            $this->cellL($rx + 4, $lineY + 2, $colW - 4, 4, '(Ký và Ghi Rõ Họ Tên)');
+            $this->cellL($rx + 4, $lineY + 2, $colW - 4, 4, '(Ký và Ghi rõ họ tên)');
             $this->cellL($rx + 4, $lineY + 9, $colW - 4, 4, 'Ngày: ____________');
         }
     }

@@ -36,7 +36,7 @@ class DashboardPage
 
         // KPI: Total products & stock value
         $stock_kpi = $wpdb->get_row(
-            "SELECT COUNT(*) AS total_products,
+            "SELECT COALESCE(SUM(current_stock), 0) AS total_stock_qty,
                     COALESCE(SUM(current_stock * avg_cost), 0) AS inventory_value
              FROM {$wpdb->prefix}htw_products"
         );
@@ -92,7 +92,8 @@ class DashboardPage
              WHERE eo.status IN ('confirmed', 'partial_return', 'fully_returned')
                AND eo.order_date BETWEEN %s AND %s
              GROUP BY ei.product_id
-             ORDER BY qty_sold DESC
+             HAVING profit > 0
+             ORDER BY profit DESC
              LIMIT 5",
             $month_start,
             $today
@@ -109,7 +110,7 @@ class DashboardPage
 
         wp_send_json_success([
             'kpi'   => [
-                'total_products'  => (int)   $stock_kpi->total_products,
+                'total_stock_qty' => (float) $stock_kpi->total_stock_qty,
                 'inventory_value' => (float) $stock_kpi->inventory_value,
                 'revenue'         => (float) $month_kpi->revenue,
                 'profit'          => (float) $month_kpi->profit,

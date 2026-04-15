@@ -547,6 +547,7 @@ class ReportsPage
             "SELECT
                 COALESCE(po.supplier_id, 0)                                                        AS supplier_id,
                 COALESCE(NULLIF(TRIM(s.name),''), NULLIF(TRIM(po.supplier_name),''), '(Kh\u00f4ng r\u00f5)') AS supplier_name,
+                MAX(s.supplier_code)                                                               AS supplier_code,
                 COUNT(DISTINCT po.id)                                                              AS total_orders,
                 COALESCE(SUM(ii_agg.total_qty), 0)                                                 AS total_qty,
                 SUM(po.goods_total)                                                                AS total_goods,
@@ -622,6 +623,7 @@ class ReportsPage
                 p.unit,
                 COALESCE(po.supplier_id, 0)                                      AS supplier_id,
                 COALESCE(NULLIF(TRIM(s.name),''), NULLIF(TRIM(po.supplier_name),''), '(Kh\u00f4ng r\u00f5)') AS supplier_name,
+                s.supplier_code                                                  AS supplier_code,
                 SUM(poi.qty)                                                     AS total_qty,
                 AVG(poi.unit_price)                                              AS avg_unit_price,
                 SUM(poi.unit_price * poi.qty)                                    AS goods_value,
@@ -661,12 +663,13 @@ class ReportsPage
             $avg_unit     = (float) $sr['avg_unit_price'];
             $fee_per_unit = ($sr['allocated_fee_per_unit'] !== null) ? (float) $sr['allocated_fee_per_unit'] : 0.0;
             $by_product[$pid]['suppliers'][] = [
-                'supplier_id'          => (int)   $sr['supplier_id'],
-                'supplier_name'        => $sr['supplier_name'],
-                'total_qty'            => (float) $sr['total_qty'],
-                'avg_unit_price'       => round($avg_unit, 2),
+                'supplier_id'            => (int)   $sr['supplier_id'],
+                'supplier_name'          => $sr['supplier_name'],
+                'supplier_code'          => $sr['supplier_code'] ?? '',
+                'total_qty'              => (float) $sr['total_qty'],
+                'avg_unit_price'         => round($avg_unit, 2),
                 'allocated_fee_per_unit' => round($fee_per_unit, 2),
-                'total_cost_per_unit'  => round($avg_unit + $fee_per_unit, 2),
+                'total_cost_per_unit'    => round($avg_unit + $fee_per_unit, 2),
             ];
         }
 
