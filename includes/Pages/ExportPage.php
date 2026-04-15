@@ -28,7 +28,10 @@ class ExportPage
         $id            = absint($_POST['id'] ?? 0);
         $order_code    = sanitize_text_field($_POST['order_code'] ?? '');
         $channel       = sanitize_text_field($_POST['channel'] ?? 'other');
-        $order_date    = sanitize_text_field($_POST['order_date'] ?? current_time('Y-m-d'));
+        // SEC-01 fix: validate date format to prevent invalid dates being stored in DB
+        $order_date    = \HTWarehouse\Services\NumberHelper::validate_date(
+            sanitize_text_field($_POST['order_date'] ?? '')
+        );
         $customer_name = sanitize_text_field($_POST['customer_name'] ?? '');
         $notes         = sanitize_textarea_field($_POST['notes'] ?? '');
         $items_raw     = $_POST['items'] ?? [];
@@ -40,19 +43,23 @@ class ExportPage
         $orders_table = $wpdb->prefix . 'htw_export_orders';
 
         if (empty($order_code)) {
-            // Auto-generate order code with retry on collision
+            // BUG-NEW-01 fix: try INSERT directly, retry on Duplicate Entry error.
+            // Eliminates race between SELECT-check and INSERT.
             $attempts = 0;
+            $ok = false;
             do {
                 $order_code = 'ORD-' . strtoupper(bin2hex(random_bytes(3)));
-                $exists = $wpdb->get_var($wpdb->prepare(
-                    "SELECT id FROM {$orders_table} WHERE order_code = %s",
-                    $order_code
-                ));
+                $ok = $wpdb->insert($orders_table, ['order_code' => $order_code]) !== false;
+                if (! $ok && stripos($wpdb->last_error, 'duplicate') === false) {
+                    wp_send_json_error('Lỗi tạo mã đơn: ' . $wpdb->last_error);
+                }
                 $attempts++;
-            } while ($exists && $attempts < 10);
-            if ($exists) {
+            } while (! $ok && $attempts < 10);
+            if (! $ok) {
                 wp_send_json_error('Không thể tạo mã đơn không trùng lặp. Vui lòng nhập mã đơn thủ công.');
             }
+            // Rollback dummy row — real insert happens inside the transaction below.
+            $wpdb->query("DELETE FROM {$orders_table} WHERE id = {$wpdb->insert_id}");
         } else {
             // Verify user-provided code is not duplicated
             $exists = $wpdb->get_var($wpdb->prepare(
@@ -365,8 +372,16 @@ class ExportPage
             "SELECT order_code FROM {$wpdb->prefix}htw_export_orders WHERE id = %d", $id
         ));
 
-        $wpdb->delete($wpdb->prefix . 'htw_export_items',  ['order_id' => $id], ['%d']);
-        $wpdb->delete($wpdb->prefix . 'htw_export_orders', ['id' => $id],        ['%d']);
+        // BUG-05 fix: wrap both deletes in a transaction so that if the second
+        // DELETE fails, the first DELETE is rolled back — order not left orphaned.
+        $wpdb->query('START TRANSACTION');
+        $ok1 = $wpdb->delete($wpdb->prefix . 'htw_export_items',  ['order_id' => $id], ['%d']);
+        $ok2 = $wpdb->delete($wpdb->prefix . 'htw_export_orders', ['id' => $id],        ['%d']);
+        if ($ok1 === false || $ok2 === false) {
+            $wpdb->query('ROLLBACK');
+            wp_send_json_error('Xóa đơn hàng thất bại: ' . $wpdb->last_error);
+        }
+        $wpdb->query('COMMIT');
 
         ActivityLogger::log('delete', 'export_order', $id, $order_code, 'Xóa đơn xuất kho nháp ' . $order_code);
 

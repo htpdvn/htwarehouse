@@ -107,11 +107,11 @@ window._htwSuppliersList = <?php echo wp_json_encode($suppliers); ?>;
                                 <template x-if="po.status === 'draft'">
                                     <button class="htw-btn htw-btn-danger htw-btn-sm" @click="del(po.id)">Xoá</button>
                                 </template>
-                                <!-- confirmed / paid_off actions: Chuyển NK (only if not yet sent to import) -->
-                                <template x-if="(po.status === 'confirmed' || po.status === 'paid_off') && !po.import_batch_id">
+                                <!-- confirmed / received / paid_off: Chuyển NK (only if not yet sent to import) -->
+                                <template x-if="(po.status === 'confirmed' || po.status === 'received' || po.status === 'paid_off') && !po.import_batch_id">
                                     <button class="htw-btn htw-btn-warning htw-btn-sm" @click="sendToImport(po.id)">Chuyển NK</button>
                                 </template>
-                                <!-- confirmed / received / paid_off: payment -->
+                                <!-- confirmed / received / paid_off: payment (backend allows all non-draft statuses) -->
                                 <template x-if="po.status === 'confirmed' || po.status === 'received' || po.status === 'paid_off'">
                                     <button class="htw-btn htw-btn-primary htw-btn-sm" @click="openPaymentModal(po)">Thanh toán</button>
                                 </template>

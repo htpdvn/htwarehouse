@@ -36,7 +36,10 @@ class ImportPage
         $batch_code   = sanitize_text_field($_POST['batch_code'] ?? '');
         $supplier_id  = absint($_POST['supplier_id'] ?? 0) ?: null;
         $supplier     = sanitize_text_field($_POST['supplier'] ?? '');
-        $import_date  = sanitize_text_field($_POST['import_date'] ?? current_time('Y-m-d'));
+        // SEC-01 fix: validate date format Y-m-d to prevent invalid dates being stored in DB
+        $import_date  = \HTWarehouse\Services\NumberHelper::validate_date(
+            sanitize_text_field($_POST['import_date'] ?? '')
+        );
         $shipping_fee    = (float) ($_POST['shipping_fee'] ?? 0);
         $tax_fee         = (float) ($_POST['tax_fee'] ?? 0);
         $service_fee     = (float) ($_POST['service_fee'] ?? 0);
@@ -47,20 +50,24 @@ class ImportPage
         $items_raw    = $_POST['items'] ?? [];
 
         if (empty($batch_code)) {
-            // Auto-generate batch code with retry on collision
+            // BUG-NEW-01 fix: try INSERT directly, retry on Duplicate Entry error.
+            // Eliminates race between SELECT-check and INSERT.
             $batch_table = $wpdb->prefix . 'htw_import_batches';
             $attempts = 0;
+            $ok = false;
             do {
                 $batch_code = 'IMP-' . strtoupper(bin2hex(random_bytes(3)));
-                $exists = $wpdb->get_var($wpdb->prepare(
-                    "SELECT id FROM {$batch_table} WHERE batch_code = %s",
-                    $batch_code
-                ));
+                $ok = $wpdb->insert($batch_table, ['batch_code' => $batch_code]) !== false;
+                if (! $ok && stripos($wpdb->last_error, 'duplicate') === false) {
+                    wp_send_json_error('Lỗi tạo mã lô: ' . $wpdb->last_error);
+                }
                 $attempts++;
-            } while ($exists && $attempts < 10);
-            if ($exists) {
+            } while (! $ok && $attempts < 10);
+            if (! $ok) {
                 wp_send_json_error('Không thể tạo mã lô không trùng lặp. Vui lòng nhập mã lô thủ công.');
             }
+            // Rollback dummy row — real insert happens inside the transaction below.
+            $wpdb->query("DELETE FROM {$batch_table} WHERE id = {$wpdb->insert_id}");
         } else {
             $batch_table = $wpdb->prefix . 'htw_import_batches';
             // Verify user-provided code is not duplicated
@@ -80,9 +87,10 @@ class ImportPage
             $pid = absint($row['product_id'] ?? 0);
             $qty = (float) ($row['qty'] ?? 0);
             $up  = (float) ($row['unit_price'] ?? 0);
-            if ($pid && $qty > 0) {
-                $items[] = ['product_id' => $pid, 'qty' => $qty, 'unit_price' => $up];
-            }
+            // Use bcmath via NumberHelper for financial precision.
+            // (Consistent with CostCalculator and all other financial fields in the plugin.)
+            $line_total = NumberHelper::mul((string) $qty, (string) $up);
+            $items[] = ['product_id' => $pid, 'qty' => $qty, 'unit_price' => $up, 'line_total' => $line_total];
         }
 
         if (empty($items)) {
@@ -312,8 +320,17 @@ class ImportPage
             "SELECT batch_code FROM {$wpdb->prefix}htw_import_batches WHERE id = %d", $id
         ));
 
-        $wpdb->delete($wpdb->prefix . 'htw_import_items',   ['batch_id' => $id], ['%d']);
-        $wpdb->delete($wpdb->prefix . 'htw_import_batches', ['id' => $id],        ['%d']);
+        // BUG-05 fix: wrap both deletes in a transaction so that if the second
+        // DELETE fails (e.g. DB error), the first DELETE is rolled back and the
+        // batch is not left in an orphaned (items-deleted, header-still-exists) state.
+        $wpdb->query('START TRANSACTION');
+        $ok1 = $wpdb->delete($wpdb->prefix . 'htw_import_items',   ['batch_id' => $id], ['%d']);
+        $ok2 = $wpdb->delete($wpdb->prefix . 'htw_import_batches', ['id' => $id],        ['%d']);
+        if ($ok1 === false || $ok2 === false) {
+            $wpdb->query('ROLLBACK');
+            wp_send_json_error('Xóa lô hàng thất bại: ' . $wpdb->last_error);
+        }
+        $wpdb->query('COMMIT');
 
         ActivityLogger::log('delete', 'import_batch', $id, $batch_code, 'Xóa lô nhập kho nháp ' . $batch_code);
 

@@ -3,6 +3,7 @@
 namespace HTWarehouse\Pages;
 
 use HTWarehouse\Services\ActivityLogger;
+use HTWarehouse\Services\NumberHelper;
 
 defined('ABSPATH') || exit;
 
@@ -167,10 +168,19 @@ class SuppliersPage
             );
         }
 
-        // Totals
-        $total_amount    = array_sum(array_column($pos, 'total_amount'));
-        $total_paid      = array_sum(array_column($pos, 'amount_paid'));
-        $total_remaining = array_sum(array_column($pos, 'amount_remaining'));
+        // Totals — use NumberHelper for bcmath precision on large monetary values.
+        // DB-05 fix: $wpdb returns strings; array_sum casts to float (precision loss).
+        $total_amount    = '0';
+        $total_paid      = '0';
+        $total_remaining = '0';
+        foreach ($pos as $po) {
+            $total_amount    = NumberHelper::add($total_amount,    (string) ($po['total_amount']    ?? '0'));
+            $total_paid      = NumberHelper::add($total_paid,      (string) ($po['amount_paid']      ?? '0'));
+            $total_remaining = NumberHelper::add($total_remaining, (string) ($po['amount_remaining'] ?? '0'));
+        }
+        $total_amount    = (float) $total_amount;
+        $total_paid      = (float) $total_paid;
+        $total_remaining = (float) $total_remaining;
 
         wp_send_json_success([
             'supplier'        => $supplier,

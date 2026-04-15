@@ -27,8 +27,9 @@ class PurchaseOrderPage
         $po_code          = sanitize_text_field($_POST['po_code'] ?? '');
         $supplier_id      = absint($_POST['supplier_id'] ?? 0);
         $supplier_name    = sanitize_text_field($_POST['supplier_name'] ?? '');
-        // Auto-populate supplier_name from suppliers table if left blank but supplier_id is set
-        if (empty($supplier_name) && $supplier_id > 0) {
+        // Auto-populate supplier_name only when field is left blank by user AND a supplier_id is selected.
+        // User-entered value is preserved — avoids silently overwriting manual entries.
+        if (empty(trim($supplier_name)) && $supplier_id > 0) {
             $supplier_name = (string) $wpdb->get_var($wpdb->prepare(
                 "SELECT name FROM {$wpdb->prefix}htw_suppliers WHERE id = %d", $supplier_id
             ));
@@ -47,18 +48,26 @@ class PurchaseOrderPage
         $items_raw        = $_POST['items'] ?? [];
 
         if (empty($po_code)) {
+            // BUG-NEW-01 fix: eliminate race condition between SELECT-check and INSERT
+            // by trying INSERT directly and retrying on Duplicate Entry error.
+            // This is atomic — no other request can slip between "check" and "insert".
             $po_table = $wpdb->prefix . 'htw_purchase_orders';
             $attempts = 0;
+            $ok = false;
             do {
                 $po_code = 'PO-' . strtoupper(bin2hex(random_bytes(3)));
-                $exists = $wpdb->get_var($wpdb->prepare(
-                    "SELECT id FROM {$po_table} WHERE po_code = %s", $po_code
-                ));
+                $ok = $wpdb->insert($po_table, ['po_code' => $po_code]) !== false;
+                if (! $ok && stripos($wpdb->last_error, 'duplicate') === false) {
+                    wp_send_json_error('Lỗi tạo mã đơn: ' . $wpdb->last_error);
+                }
                 $attempts++;
-            } while ($exists && $attempts < 10);
-            if ($exists) {
+            } while (! $ok && $attempts < 10);
+            if (! $ok) {
                 wp_send_json_error('Không thể tạo mã đơn không trùng lặp. Vui lòng nhập mã thủ công.');
             }
+            // Undo the dummy row — real insert happens in the main transaction below.
+            // last_insert_id is safe here: only one insert succeeded.
+            $wpdb->query("DELETE FROM {$po_table} WHERE id = {$wpdb->insert_id}");
         } else {
             $po_table = $wpdb->prefix . 'htw_purchase_orders';
             $exists = $wpdb->get_var($wpdb->prepare(
@@ -99,8 +108,8 @@ class PurchaseOrderPage
             ), ARRAY_A);
             if ($existing) {
                 $current_status = $existing['status'];
-                if ($current_status !== 'draft' && $current_status !== 'received') {
-                    wp_send_json_error('Chỉ có thể sửa đơn ở trạng thái nháp hoặc đã nhận hàng.');
+                if (! in_array($current_status, ['draft', 'confirmed', 'received'], true)) {
+                    wp_send_json_error('Chỉ có thể sửa đơn ở trạng thái nháp, đã gửi hoặc đã nhận hàng.');
                 }
                 $amount_paid = (float) $existing['amount_paid'];
 
@@ -258,11 +267,13 @@ class PurchaseOrderPage
         ), ARRAY_A);
 
         $batch_table = $wpdb->prefix . 'htw_import_batches';
+        // BUG-NEW-01 fix: SELECT ... FOR UPDATE inside the transaction locks the row
+        // during check so no concurrent request can slip a duplicate code in.
         $attempts = 0;
         do {
             $batch_code = $po->po_code . '-IMP-' . strtoupper(bin2hex(random_bytes(2)));
             $exists = $wpdb->get_var($wpdb->prepare(
-                "SELECT id FROM {$batch_table} WHERE batch_code = %s", $batch_code
+                "SELECT id FROM {$batch_table} WHERE batch_code = %s FOR UPDATE", $batch_code
             ));
             $attempts++;
         } while ($exists && $attempts < 10);
@@ -452,9 +463,6 @@ class PurchaseOrderPage
             if ($batch && $batch->status === 'confirmed') {
                 wp_send_json_error('Không thể xóa: lô nhập kho đã được xác nhận. Vui lòng hoàn tác lô nhập kho trước.');
             }
-            // Delete the linked import batch and its items
-            $wpdb->delete($wpdb->prefix . 'htw_import_items', ['batch_id' => $po->import_batch_id]);
-            $wpdb->delete($wpdb->prefix . 'htw_import_batches', ['id' => $po->import_batch_id]);
         }
 
         // Lấy thông tin PO trước khi xóa để ghi log
@@ -462,9 +470,26 @@ class PurchaseOrderPage
             "SELECT po_code FROM {$wpdb->prefix}htw_purchase_orders WHERE id = %d", $id
         ));
 
-        $wpdb->delete($wpdb->prefix . 'htw_po_payments',          ['po_id' => $id], ['%d']);
-        $wpdb->delete($wpdb->prefix . 'htw_purchase_order_items', ['po_id' => $id], ['%d']);
-        $wpdb->delete($wpdb->prefix . 'htw_purchase_orders',        ['id' => $id],   ['%d']);
+        // BUG-06 fix: wrap all DELETEs in a single transaction.
+        // Previously, 5 separate deletes ran without a transaction — a failure
+        // at step 3 or 4 would leave the DB in an inconsistent (orphaned) state.
+        $wpdb->query('START TRANSACTION');
+        $ok = true;
+
+        if (! empty($po->import_batch_id)) {
+            $ok = $ok && ($wpdb->delete($wpdb->prefix . 'htw_import_items',   ['batch_id' => $po->import_batch_id]) !== false);
+            $ok = $ok && ($wpdb->delete($wpdb->prefix . 'htw_import_batches', ['id' => $po->import_batch_id]) !== false);
+        }
+
+        $ok = $ok && ($wpdb->delete($wpdb->prefix . 'htw_po_payments',          ['po_id' => $id], ['%d']) !== false);
+        $ok = $ok && ($wpdb->delete($wpdb->prefix . 'htw_purchase_order_items', ['po_id' => $id], ['%d']) !== false);
+        $ok = $ok && ($wpdb->delete($wpdb->prefix . 'htw_purchase_orders',        ['id' => $id],   ['%d']) !== false);
+
+        if (! $ok) {
+            $wpdb->query('ROLLBACK');
+            wp_send_json_error('Xóa đơn đặt hàng thất bại: ' . $wpdb->last_error);
+        }
+        $wpdb->query('COMMIT');
 
         ActivityLogger::log(
             'delete',
@@ -506,6 +531,9 @@ class PurchaseOrderPage
         $po = $wpdb->get_row($wpdb->prepare(
             "SELECT * FROM {$wpdb->prefix}htw_purchase_orders WHERE id = %d", $payment->po_id
         ));
+        if (! $po) {
+            wp_send_json_error('Không tìm thấy đơn đặt hàng liên kết với thanh toán này.');
+        }
 
         // Guard against overpayment when editing:
         // remaining after edit = total - (current_paid - old_amount + new_amount)

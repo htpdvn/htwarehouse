@@ -65,6 +65,7 @@ class Admin
         add_action('wp_ajax_htw_snapshot_restore',   [SnapshotPage::class, 'ajax_restore']);
         add_action('wp_ajax_htw_snapshot_delete',    [SnapshotPage::class, 'ajax_delete']);
         add_action('wp_ajax_htw_snapshot_status',   [SnapshotPage::class, 'ajax_get_status']);
+        add_action('wp_ajax_htw_snapshot_download', [SnapshotPage::class, 'ajax_download']);
 
         // Activity log AJAX
         add_action('wp_ajax_htw_activity_log_data',   [ActivityLogPage::class, 'ajax_get_logs']);

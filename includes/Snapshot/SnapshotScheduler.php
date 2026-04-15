@@ -101,10 +101,17 @@ class SnapshotScheduler
         $errors = [];
 
         try {
-            $result = SnapshotService::create();
+            SnapshotService::create();
         } catch (\Throwable $e) {
             $errors[] = 'create: ' . $e->getMessage();
-            SnapshotService::create(); // try once more in case of transient error
+            // BUG-03 fix: retry MUST be wrapped in its own try/catch.
+            // Previously an uncaught exception here would abort the cron job,
+            // preventing cleanup() from running and status from being saved.
+            try {
+                SnapshotService::create();
+            } catch (\Throwable $e2) {
+                $errors[] = 'create_retry: ' . $e2->getMessage();
+            }
         }
 
         try {

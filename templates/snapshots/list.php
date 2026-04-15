@@ -116,9 +116,10 @@ window._htwNextRun = <?php echo $next_run ? wp_json_encode(date_i18n('d/m/Y H:i'
                                     <button class="htw-btn htw-btn-success htw-btn-sm" @click="confirmRestore(s)" title="Khôi phục">
                                         <span class="dashicons dashicons-undo" style="font-size:.85rem;"></span> Khôi phục
                                     </button>
-                                    <a class="htw-btn htw-btn-ghost htw-btn-sm" :href="s.url" download :title="'Tải ' + s.filename">
+                                    <!-- D6 fix: download via AJAX endpoint with nonce + auth check instead of public URL -->
+                                    <button class="htw-btn htw-btn-ghost htw-btn-sm" @click="downloadSnapshot(s)" title="'Tải ' + s.filename">
                                         <span class="dashicons dashicons-download" style="font-size:.85rem;"></span>
-                                    </a>
+                                    </button>
                                     <button class="htw-btn htw-btn-danger htw-btn-sm" @click="deleteSnapshot(s)" title="Xoá">
                                         <span class="dashicons dashicons-trash" style="font-size:.85rem;"></span>
                                     </button>

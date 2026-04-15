@@ -1,4 +1,5 @@
 <?php defined('ABSPATH') || exit; ?>
+<script>window._htwLowStock = <?php echo wp_json_encode($low_stock); ?>;</script>
 <div class="htw-wrap" x-data="htwDashboard()">
 
     <div class="htw-page-header">
@@ -63,8 +64,7 @@
     </div>
 
     <!-- Low stock -->
-    <?php if (!empty($low_stock)) : ?>
-    <div class="htw-card" style="margin-top:18px;">
+    <div class="htw-card" style="margin-top:18px;" x-show="lowStock && lowStock.length">
         <div class="htw-chart-title" style="margin-bottom:12px">⚠️ Hàng sắp hết kho</div>
         <div class="htw-table-wrap">
             <table class="htw-table">
@@ -77,18 +77,17 @@
                     </tr>
                 </thead>
                 <tbody>
-                    <?php foreach ($low_stock as $p) : ?>
+                    <template x-for="p in lowStock" :key="p.sku">
                     <tr>
-                        <td><?= esc_html($p['sku']) ?></td>
-                        <td><?= esc_html($p['name']) ?></td>
-                        <td style="color:var(--htw-danger);font-weight:700;"><?= number_format((float)$p['current_stock'], 0) ?></td>
-                        <td><?= esc_html($p['unit']) ?></td>
+                        <td><span x-text="p.sku || '—'"></span></td>
+                        <td><span x-text="p.name || '—'"></span></td>
+                        <td style="color:var(--htw-danger);font-weight:700;" x-text="parseFloat(p.current_stock || 0).toLocaleString('vi-VN')"></td>
+                        <td><span x-text="p.unit || '—'"></span></td>
                     </tr>
-                    <?php endforeach; ?>
+                    </template>
                 </tbody>
             </table>
         </div>
     </div>
-    <?php endif; ?>
 
 </div>

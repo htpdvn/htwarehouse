@@ -29,7 +29,10 @@ class ReturnOrderPage
 
         $return_id      = absint($_POST['return_id']      ?? 0);
         $export_order_id = absint($_POST['export_order_id'] ?? 0);
-        $return_date    = sanitize_text_field($_POST['return_date'] ?? current_time('Y-m-d'));
+        // SEC-01 fix: validate date format Y-m-d to prevent invalid dates being stored
+        $return_date    = \HTWarehouse\Services\NumberHelper::validate_date(
+            sanitize_text_field($_POST['return_date'] ?? '')
+        );
         $reason         = sanitize_text_field($_POST['reason'] ?? '');
         $notes          = sanitize_textarea_field($_POST['notes'] ?? '');
         $items_raw      = $_POST['items'] ?? [];
@@ -126,7 +129,26 @@ class ReturnOrderPage
         $return_table = $wpdb->prefix . 'htw_return_orders';
         $ri_table     = $wpdb->prefix . 'htw_return_items';
 
+        // BUG-NEW-01 fix (inside transaction): use SELECT ... FOR UPDATE to lock
+        // the check — no other transaction can insert the same code between check and insert.
+        // (This runs inside the transaction started below, so FOR UPDATE is safe.)
+        $return_table_name = $wpdb->prefix . 'htw_return_orders';
+        $attempts = 0;
+        do {
+            $return_code = 'RET-' . strtoupper(bin2hex(random_bytes(4)));
+            $exists = $wpdb->get_var($wpdb->prepare(
+                "SELECT id FROM {$return_table_name} WHERE return_code = %s FOR UPDATE",
+                $return_code
+            ));
+            $attempts++;
+        } while ($exists && $attempts < 10);
+        if ($exists) {
+            $wpdb->query('ROLLBACK');
+            wp_send_json_error('Không thể tạo mã đơn trả không trùng lặp. Vui lòng thử lại.');
+        }
+
         $return_data = [
+            'return_code'     => $return_code,
             'export_order_id' => $export_order_id,
             'return_date'     => $return_date,
             'reason'          => $reason,
@@ -137,23 +159,11 @@ class ReturnOrderPage
             'status'          => 'pending',
         ];
 
-        if ($return_id > 0) {
-            $wpdb->update($return_table, $return_data, ['id' => $return_id]);
-            $wpdb->delete($ri_table, ['return_order_id' => $return_id], ['%d']);
-        } else {
-            // Auto-generate return_code
-            $attempts = 0;
-            do {
-                $return_code = 'RTN-' . strtoupper(bin2hex(random_bytes(3)));
-                $exists = $wpdb->get_var($wpdb->prepare(
-                    "SELECT id FROM {$return_table} WHERE return_code = %s",
-                    $return_code
-                ));
-                $attempts++;
-            } while ($exists && $attempts < 10);
-
-            $return_data['return_code'] = $return_code;
-        }
+        // BUG-02 fix: the duplicate write block that existed here (lines 140-142 in original)
+        // has been removed. The UPDATE/DELETE for editing was executed TWICE:
+        //   1) Outside the transaction (non-atomic, could not be rolled back)
+        //   2) Inside the transaction below (correct, atomic)
+        // Now only the transactional block below performs the write.
 
         // Wrap header + items in a transaction to prevent partial writes
         // (e.g. return_order inserted but items fail due to FK or quota constraint).
@@ -250,7 +260,7 @@ class ReturnOrderPage
             ), ARRAY_A);
 
             if (! $return_order) {
-                throw new \Exception('\u0110\u01a1n tr\u1ea3 kh\u00f4ng t\u1ed3n t\u1ea1i.');
+                throw new \Exception('Đơn trả không tồn tại.');
             }
             if ('confirmed' === $return_order['status']) {
                 // Another request already confirmed this return order — silently succeed
@@ -269,7 +279,7 @@ class ReturnOrderPage
                     $ri['export_item_id']
                 ), ARRAY_A);
 
-                if (! $ei) throw new \Exception("Export item #{$ri['export_item_id']} kh\u00f4ng t\u1ed3n t\u1ea1i.");
+                if (! $ei) throw new \Exception("Export item #{$ri['export_item_id']} không tồn tại.");
 
                 $sold_qty        = (float) $ei['qty'];
                 $returned_so_far = (float) ($already_returned[$ri['export_item_id']] ?? 0);
@@ -277,7 +287,7 @@ class ReturnOrderPage
 
                 if ((float) $ri['qty_returned'] > $max_returnable) {
                     throw new \Exception(
-                        "S\u1ed1 l\u01b0\u1ee3ng tr\u1ea3 v\u01b0\u1ee3t gi\u1edbi h\u1ea1n cho s\u1ea3n ph\u1ea9m #{$ri['product_id']}. T\u1ed1i \u0111a: {$max_returnable}"
+                        "Số lượng trả vượt giới hạn cho sản phẩm #{$ri['product_id']}. Tối đa: {$max_returnable}"
                     );
                 }
 
@@ -287,7 +297,7 @@ class ReturnOrderPage
                     $ri['product_id']
                 ), ARRAY_A);
 
-                if (! $product) throw new \Exception("S\u1ea3n ph\u1ea9m #{$ri['product_id']} kh\u00f4ng t\u1ed3n t\u1ea1i.");
+                if (! $product) throw new \Exception("Sản phẩm #{$ri['product_id']} không tồn tại.");
 
                 $old_stock    = (float) $product['current_stock'];
                 $old_avg_cost = (float) $product['avg_cost'];
@@ -318,7 +328,7 @@ class ReturnOrderPage
                     ['%f', '%f'],
                     ['%d']
                 );
-                if ($ok === false) throw new \Exception("Kh\u00f4ng th\u1ec3 c\u1eadp nh\u1eadt t\u1ed3n kho s\u1ea3n ph\u1ea9m #{$ri['product_id']}.");
+                if ($ok === false) throw new \Exception("Không thể cập nhật tồn kho sản phẩm #{$ri['product_id']}.");
             }
 
             // Mark return order as confirmed
@@ -329,7 +339,7 @@ class ReturnOrderPage
                 ['%s'],
                 ['%d']
             );
-            if ($ok === false) throw new \Exception('Kh\u00f4ng th\u1ec3 c\u1eadp nh\u1eadt tr\u1ea1ng th\u00e1i \u0111\u01a1n tr\u1ea3.');
+            if ($ok === false) throw new \Exception('Không thể cập nhật trạng thái đơn trả.');
 
             // Lock the export_order row to prevent concurrent confirms from racing
             // on the same export order (both would call recalculate with stale data).
@@ -443,8 +453,17 @@ class ReturnOrderPage
             "SELECT return_code FROM {$wpdb->prefix}htw_return_orders WHERE id = %d", $return_id
         ));
 
-        $wpdb->delete($wpdb->prefix . 'htw_return_items',  ['return_order_id' => $return_id], ['%d']);
-        $wpdb->delete($wpdb->prefix . 'htw_return_orders', ['id'              => $return_id], ['%d']);
+        // BUG-01 fix: wrap both deletes in a single transaction so that if the second
+        // DELETE fails (e.g. DB error), the first DELETE is rolled back and the
+        // return order is not left in an orphaned (items-deleted, header-still-exists) state.
+        $wpdb->query('START TRANSACTION');
+        $ok1 = $wpdb->delete($wpdb->prefix . 'htw_return_items',  ['return_order_id' => $return_id], ['%d']);
+        $ok2 = $wpdb->delete($wpdb->prefix . 'htw_return_orders', ['id'              => $return_id], ['%d']);
+        if ($ok1 === false || $ok2 === false) {
+            $wpdb->query('ROLLBACK');
+            wp_send_json_error('Xóa đơn trả thất bại: ' . $wpdb->last_error);
+        }
+        $wpdb->query('COMMIT');
 
         ActivityLogger::log('delete', 'return_order', $return_id, $return_code, 'Xóa đơn trả hàng chờ duyệt ' . $return_code);
 
@@ -481,7 +500,7 @@ class ReturnOrderPage
 
         $map = [];
         foreach ($rows as $row) {
-            $map[(int) $row['export_item_id']] = (float) $row['qty_sum'];
+            $map[(int) $row['export_item_id']] = (string) $row['qty_sum'];
         }
         return $map;
     }

@@ -244,7 +244,11 @@ class ProductsPage
         $errors     = [];
         $row_num    = 0;
         $header_map = [];
-        $header_validated = false;
+
+        // ── Step 1: Parse all rows first (before any DB write) ─────────────────
+        // Collect upsert data to allow a single transaction for all writes.
+        $upserts   = [];  // [sku => ['existing_id' => int|null, 'data' => [...]]]
+        $seen_skus = [];  // track duplicate SKUs within the file itself
 
         while (($cols = fgetcsv($handle)) !== false) {
             // Strip UTF-8 BOM from very first cell
@@ -291,7 +295,6 @@ class ProductsPage
             $img_idx     = $header_map['link ảnh']      ?? $header_map['image_url']   ?? null;
             $url_idx     = $header_map['link sản phẩm'] ?? $header_map['product_url'] ?? null;
             $notes_idx   = $header_map['ghi chú']       ?? $header_map['notes']       ?? null;
-            // (Tồn kho / Giá vốn columns are intentionally never read)
 
             $category = sanitize_text_field($cols[ $cat_idx ] ?? '');
             $name     = sanitize_text_field($cols[ $name_idx ] ?? '');
@@ -303,19 +306,32 @@ class ProductsPage
                 continue;
             }
 
-            // Per-row required field validation
+            // Per-row required field validation (collect errors, don't abort yet)
+            $row_ok = true;
             if (empty($category)) {
                 $errors[] = "Dòng {$row_num}: Thiếu Danh mục.";
-                continue;
+                $row_ok = false;
             }
             if (empty($name)) {
                 $errors[] = "Dòng {$row_num}: Thiếu Tên sản phẩm.";
-                continue;
+                $row_ok = false;
             }
             if (empty($sku)) {
                 $errors[] = "Dòng {$row_num}: Thiếu SKU (bắt buộc để nhận diện sản phẩm).";
+                $row_ok = false;
+            }
+
+            // Detect duplicate SKUs within the file itself
+            if ($sku !== '' && isset($seen_skus[$sku]) && $row_ok) {
+                $errors[] = "Dòng {$row_num}: SKU \"{$sku}\" bị trùng lặp trong file (trước đó ở dòng {$seen_skus[$sku]}).";
+                $row_ok = false;
+            }
+
+            if (! $row_ok) {
                 continue;
             }
+
+            $seen_skus[$sku] = $row_num;
 
             // Optional fields
             $unit     = $unit_idx    !== null ? (sanitize_text_field($cols[ $unit_idx ]      ?? '') ?: 'cái') : 'cái';
@@ -324,53 +340,98 @@ class ProductsPage
             $prod_url = $url_idx     !== null ? esc_url_raw($cols[ $url_idx ]                ?? '') : '';
             $notes    = $notes_idx   !== null ? sanitize_textarea_field($cols[ $notes_idx ]  ?? '') : '';
 
-            // Upsert: update if SKU exists, insert if new
-            $existing_id = $wpdb->get_var($wpdb->prepare(
-                "SELECT id FROM {$table} WHERE sku = %s",
-                $sku
-            ));
-
-            if ($existing_id) {
-                // Update non-financial fields only — never touch current_stock or avg_cost
-                $wpdb->update(
-                    $table,
-                    [
-                        'category'    => $category,
-                        'name'        => $name,
-                        'unit'        => $unit,
-                        'barcode'     => $barcode,
-                        'image_url'   => $img_url,
-                        'product_url' => $prod_url,
-                        'notes'       => $notes,
-                    ],
-                    ['id' => $existing_id],
-                    ['%s', '%s', '%s', '%s', '%s', '%s', '%s'],
-                    ['%d']
-                );
-            } else {
-                // Insert new — current_stock and avg_cost always start at 0
-                $wpdb->insert(
-                    $table,
-                    [
-                        'sku'           => $sku,
-                        'name'          => $name,
-                        'category'      => $category,
-                        'unit'          => $unit,
-                        'barcode'       => $barcode,
-                        'image_url'     => $img_url,
-                        'product_url'   => $prod_url,
-                        'notes'         => $notes,
-                        'current_stock' => '0',
-                        'avg_cost'      => '0',
-                    ],
-                    ['%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s']
-                );
-            }
-            $imported++;
+            $upserts[$sku] = [
+                'category'  => $category,
+                'name'     => $name,
+                'unit'     => $unit,
+                'barcode'  => $barcode,
+                'img_url'  => $img_url,
+                'prod_url' => $prod_url,
+                'notes'    => $notes,
+            ];
         }
 
-
         fclose($handle);
+
+        // No valid rows at all — return early
+        if (empty($upserts)) {
+            $msg = "Không có dòng hợp lệ để xử lý.";
+            if ($skipped > 0) {
+                $msg .= " Bỏ qua {$skipped} dòng trống.";
+            }
+            if (! empty($errors)) {
+                $msg .= ' Lỗi: ' . implode('; ', array_slice($errors, 0, 5));
+            }
+            wp_send_json_success(['message' => $msg, 'imported' => 0, 'skipped' => $skipped, 'errors' => $errors]);
+        }
+
+        // ── Step 2: Resolve existing SKUs in ONE query ──────────────────────────
+        // Batch lookup — O(1) instead of N individual queries.
+        $sku_list = array_keys($upserts);
+        $placeholders = implode(',', array_fill(0, count($sku_list), '%s'));
+        $existing_rows = $wpdb->get_results($wpdb->prepare(
+            "SELECT id, sku FROM {$table} WHERE sku IN ({$placeholders})",
+            ...$sku_list
+        ), ARRAY_A);
+        foreach ($existing_rows as $row) {
+            $upserts[ $row['sku'] ]['existing_id'] = (int) $row['id'];
+        }
+
+        // ── Step 3: Wrap all writes in a single transaction ──────────────────────
+        // If any row fails, the entire import is rolled back — no partial state.
+        $wpdb->query('START TRANSACTION');
+        try {
+            foreach ($upserts as $sku => $row) {
+                if (! empty($row['existing_id'])) {
+                    // Update non-financial fields only — never touch current_stock or avg_cost
+                    $updated = $wpdb->update(
+                        $table,
+                        [
+                            'category'    => $row['category'],
+                            'name'        => $row['name'],
+                            'unit'        => $row['unit'],
+                            'barcode'     => $row['barcode'],
+                            'image_url'   => $row['img_url'],
+                            'product_url' => $row['prod_url'],
+                            'notes'       => $row['notes'],
+                        ],
+                        ['id' => $row['existing_id']],
+                        ['%s', '%s', '%s', '%s', '%s', '%s', '%s'],
+                        ['%d']
+                    );
+                    if ($updated === false) {
+                        throw new \Exception("Dòng SKU \"{$sku}\": lỗi cập nhật — {$wpdb->last_error}");
+                    }
+                } else {
+                    // Insert new — current_stock and avg_cost always start at 0
+                    $inserted = $wpdb->insert(
+                        $table,
+                        [
+                            'sku'           => $sku,
+                            'name'          => $row['name'],
+                            'category'      => $row['category'],
+                            'unit'          => $row['unit'],
+                            'barcode'       => $row['barcode'],
+                            'image_url'     => $row['img_url'],
+                            'product_url'   => $row['prod_url'],
+                            'notes'         => $row['notes'],
+                            'current_stock' => '0',
+                            'avg_cost'      => '0',
+                        ],
+                        ['%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s']
+                    );
+                    if ($inserted === false) {
+                        throw new \Exception("Dòng SKU \"{$sku}\": lỗi chèn mới — {$wpdb->last_error}");
+                    }
+                }
+                $imported++;
+            }
+
+            $wpdb->query('COMMIT');
+        } catch (\Throwable $e) {
+            $wpdb->query('ROLLBACK');
+            wp_send_json_error('Import CSV thất bại (đã rollback): ' . $e->getMessage());
+        }
 
         $msg = "Đã xử lý {$imported} mục thành công.";
         if ($skipped > 0) {

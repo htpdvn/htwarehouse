@@ -22,7 +22,8 @@ class NumberHelper
         if (function_exists('bccomp')) {
             return bccomp(self::normalize($value), '0', 4) <= 0;
         }
-        return (float) $value <= 0.0001;
+        // BUG-07 fix: was <= 0.0001, which incorrectly treated small positive values as zero
+        return (float) $value <= 0.0;
     }
 
     /**
@@ -147,5 +148,32 @@ class NumberHelper
             "SELECT COALESCE(SUM(amount), 0) FROM {$wpdb->prefix}htw_po_payments WHERE po_id = %d",
             $po_id
         ));
+    }
+
+    /**
+     * Validate and sanitize a date string to Y-m-d format. (SEC-01)
+     * Returns the current date if the input is empty or invalid.
+     *
+     * @param string $date    Raw date input (e.g. from $_POST).
+     * @param string $default Default date if invalid. Defaults to current_time('Y-m-d').
+     * @return string A valid Y-m-d date string.
+     */
+    public static function validate_date(string $date, string $default = ''): string
+    {
+        if ($default === '') {
+            // Use WP current_time when available, fall back to date() otherwise
+            $default = function_exists('current_time') ? current_time('Y-m-d') : date('Y-m-d');
+        }
+
+        if (empty($date)) {
+            return $default;
+        }
+
+        $d = \DateTime::createFromFormat('Y-m-d', $date);
+        if ($d && $d->format('Y-m-d') === $date) {
+            return $date;
+        }
+
+        return $default;
     }
 }

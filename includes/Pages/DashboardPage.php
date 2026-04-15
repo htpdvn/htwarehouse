@@ -2,24 +2,29 @@
 
 namespace HTWarehouse\Pages;
 
+use HTWarehouse\Services\NumberHelper;
+
 defined('ABSPATH') || exit;
 
 class DashboardPage
 {
+    /** Low-stock warning threshold (units). Configurable via WordPress filter. */
+    private const LOW_STOCK_THRESHOLD = 5;
 
     public static function render(): void
     {
         if (! current_user_can('manage_options')) wp_die('Unauthorized');
 
         global $wpdb;
-        $low_stock = $wpdb->get_results(
+        $threshold = apply_filters('htw_low_stock_threshold', self::LOW_STOCK_THRESHOLD);
+        $low_stock = $wpdb->get_results($wpdb->prepare(
             "SELECT sku, name, current_stock, unit
              FROM {$wpdb->prefix}htw_products
-             WHERE current_stock <= 5
+             WHERE current_stock <= %d
              ORDER BY current_stock ASC
              LIMIT 10",
-            ARRAY_A
-        );
+            $threshold
+        ), ARRAY_A);
 
         include HTW_PLUGIN_DIR . 'templates/dashboard.php';
     }
@@ -35,33 +40,40 @@ class DashboardPage
         $today       = date('Y-m-d');
 
         // KPI: Total products & stock value
+        // DB-03 fix: cast to DECIMAL(30,10) before multiply to avoid premature truncation
+        // to DECIMAL(15,2) that would lose fractional cents before SUM aggregation.
         $stock_kpi = $wpdb->get_row(
             "SELECT COALESCE(SUM(current_stock), 0) AS total_stock_qty,
-                    COALESCE(SUM(current_stock * avg_cost), 0) AS inventory_value
+                    COALESCE(SUM(
+                        CAST(current_stock AS DECIMAL(30,10))
+                        * CAST(COALESCE(avg_cost, 0) AS DECIMAL(30,10))
+                    ), 0) AS inventory_value
              FROM {$wpdb->prefix}htw_products"
         );
 
-        // KPI: This month orders — exclude fully_returned since those have zero net revenue
-        // and inflating total_orders count misleads the user about actual sales activity.
+        // KPI: This month orders — exclude fully_returned since net revenue = 0.
+        // Total_orders already only counts confirmed + partial_return; keeping the same
+        // filter here ensures revenue/profit are consistent with the order count.
         $month_kpi = $wpdb->get_row($wpdb->prepare(
             "SELECT COALESCE(SUM(total_revenue),0)                                AS revenue,
                     COALESCE(SUM(total_cogs),0)                                   AS cogs,
                     COALESCE(SUM(total_profit),0)                                 AS profit,
                     COUNT(CASE WHEN status IN ('confirmed','partial_return') THEN 1 END) AS total_orders
              FROM {$wpdb->prefix}htw_export_orders
-             WHERE status IN ('confirmed', 'partial_return', 'fully_returned')
+             WHERE status IN ('confirmed', 'partial_return')
                AND order_date BETWEEN %s AND %s",
             $month_start,
             $today
         ));
 
         // Chart: Last 6 months revenue + profit
+        // DB-01 fix: exclude fully_returned (revenue = 0 but still distorts period totals)
         $chart = $wpdb->get_results(
             "SELECT DATE_FORMAT(order_date, '%Y-%m') AS month,
                     SUM(total_revenue) AS revenue,
                     SUM(total_profit)  AS profit
              FROM {$wpdb->prefix}htw_export_orders
-             WHERE status IN ('confirmed', 'partial_return', 'fully_returned')
+             WHERE status IN ('confirmed', 'partial_return')
                AND order_date >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)
              GROUP BY DATE_FORMAT(order_date, '%Y-%m')
              ORDER BY MIN(order_date) ASC",
@@ -89,7 +101,7 @@ class DashboardPage
                          ON ro.id = ri.return_order_id AND ro.status = 'confirmed'
                  GROUP BY ri.export_item_id
              ) ret ON ret.export_item_id = ei.id
-             WHERE eo.status IN ('confirmed', 'partial_return', 'fully_returned')
+             WHERE eo.status IN ('confirmed', 'partial_return')
                AND eo.order_date BETWEEN %s AND %s
              GROUP BY ei.product_id
              HAVING profit > 0

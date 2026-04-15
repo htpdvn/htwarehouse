@@ -81,6 +81,10 @@ class ActivityLogger
             if (! empty($_SERVER[$header])) {
                 // X-Forwarded-For có thể là danh sách IP cách nhau bằng dấu phẩy
                 $ip = trim(explode(',', $_SERVER[$header])[0]);
+                // Strip port number if present (e.g. "203.0.113.50:8080")
+                if (strpos($ip, ':') !== false) {
+                    $ip = preg_replace('/:\d+$/', '', $ip);
+                }
                 if (filter_var($ip, FILTER_VALIDATE_IP)) {
                     return $ip;
                 }

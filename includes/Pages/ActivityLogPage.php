@@ -116,14 +116,14 @@ class ActivityLogPage
         $date_from = sanitize_text_field($_POST['date_from'] ?? '');
         $date_to   = sanitize_text_field($_POST['date_to']   ?? '');
         $obj_type  = sanitize_text_field($_POST['object_type'] ?? '');
-        $action    = sanitize_text_field($_POST['action']     ?? '');
+        $log_action = sanitize_text_field($_POST['log_action'] ?? '');  // S7 fix: renamed from 'action' to avoid collision with WordPress AJAX hook name
         $user_id   = absint($_POST['user_id'] ?? 0);
         $keyword   = sanitize_text_field($_POST['keyword']   ?? '');
 
         if ($date_from) { $where .= ' AND created_at >= %s'; $params[] = $date_from . ' 00:00:00'; }
         if ($date_to)   { $where .= ' AND created_at <= %s'; $params[] = $date_to   . ' 23:59:59'; }
         if ($obj_type)  { $where .= ' AND object_type = %s'; $params[] = $obj_type; }
-        if ($action)    { $where .= ' AND action = %s';       $params[] = $action; }
+        if ($log_action)  { $where .= ' AND action = %s';       $params[] = $log_action; }
         if ($user_id > 0) { $where .= ' AND user_id = %d';   $params[] = $user_id; }
         if ($keyword) {
             $like = '%' . $wpdb->esc_like($keyword) . '%';

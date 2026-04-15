@@ -123,11 +123,20 @@ class ReportsPage
              ORDER BY category, name",
             ARRAY_A
         );
-        $total_value = 0;
+        $total_value     = 0.0;
+        $total_stock_qty = 0.0;
         foreach ($rows as $row) {
-            $total_value += (float) $row['inventory_value'];
+            $iv = (float) ($row['inventory_value'] ?? 0);
+            $total_value     += $iv;
+            // BUG-08 fix: compute total_stock_qty server-side so frontend
+            // does not need to (and cannot incorrectly) recompute it.
+            $total_stock_qty += (float) ($row['current_stock'] ?? 0);
         }
-        return ['rows' => $rows, 'total_inventory_value' => $total_value];
+        return [
+            'rows'                 => $rows,
+            'total_inventory_value' => $total_value,
+            'total_stock_qty'      => $total_stock_qty,
+        ];
     }
 
     // ── Nhập Xuất Tồn theo kỳ ────────────────────────────────────────────────
@@ -135,8 +144,8 @@ class ReportsPage
     {
         global $wpdb;
 
-        if (empty($from)) $from = date('Y-m-01');
-        if (empty($to))   $to   = date('Y-m-d');
+        if (empty($from)) $from = substr(current_time('Y-m-01'), 0, 10);
+        if (empty($to))   $to   = substr(current_time('Y-m-d'), 0, 10);
 
         // Only load IN-PERIOD transactions. We do NOT need pre-period data because
         // opening_stock is derived from the inventory identity:
@@ -205,6 +214,7 @@ class ReportsPage
 
         $rows = [];
         $has_discrepancy = false;
+        $discrepancy_products = [];
         foreach ($products as $p) {
             $pid = (int) $p['id'];
 
@@ -226,6 +236,12 @@ class ReportsPage
             // (data integrity issue — flag but still display 0).
             if ($raw_opening < 0) {
                 $has_discrepancy = true;
+                $discrepancy_products[] = [
+                    'sku'          => $p['sku'],
+                    'name'         => $p['name'],
+                    'raw_opening'  => round($raw_opening, 3),
+                    'closing_stock' => $closing,
+                ];
             }
             $opening = max(0.0, $raw_opening);
 
@@ -241,7 +257,13 @@ class ReportsPage
             ];
         }
 
-        return ['rows' => $rows, 'date_from' => $from, 'date_to' => $to, 'has_discrepancy' => $has_discrepancy];
+        return [
+            'rows'                   => $rows,
+            'date_from'              => $from,
+            'date_to'                => $to,
+            'has_discrepancy'        => $has_discrepancy,
+            'discrepancy_products'   => $discrepancy_products,
+        ];
     }
 
     // ── Lợi nhuận theo sản phẩm ──────────────────────────────────────────────
@@ -250,8 +272,8 @@ class ReportsPage
     {
         global $wpdb;
 
-        if (empty($from)) $from = date('Y-m-01');
-        if (empty($to))   $to   = date('Y-m-d');
+        if (empty($from)) $from = substr(current_time('Y-m-01'), 0, 10);
+        if (empty($to))   $to   = substr(current_time('Y-m-d'), 0, 10);
 
         // Net revenue/cogs/profit/qty after subtracting confirmed returns.
         // Without this, orders with partial_return or fully_returned status would
@@ -300,8 +322,8 @@ class ReportsPage
     {
         global $wpdb;
 
-        if (empty($from)) $from = date('Y-m-01');
-        if (empty($to))   $to   = date('Y-m-d');
+        if (empty($from)) $from = substr(current_time('Y-m-01'), 0, 10);
+        if (empty($to))   $to   = substr(current_time('Y-m-d'), 0, 10);
 
         // Báo cáo theo kênh bán — dùng total_revenue/cogs/profit từ export_orders (đã được
         // recalculate_export_order() điều chỉnh net sau hàng trả).
@@ -316,7 +338,7 @@ class ReportsPage
                          THEN ROUND(SUM(total_profit) / SUM(total_revenue) * 100, 2)
                          ELSE 0 END AS margin_pct
              FROM {$wpdb->prefix}htw_export_orders
-             WHERE status IN ('confirmed', 'partial_return', 'fully_returned')
+             WHERE status IN ('confirmed', 'partial_return')
                AND order_date BETWEEN %s AND %s
              GROUP BY channel
              ORDER BY profit DESC",
@@ -341,8 +363,8 @@ class ReportsPage
     {
         global $wpdb;
 
-        if (empty($from)) $from = date('Y-m-01');
-        if (empty($to))   $to   = date('Y-m-d');
+        if (empty($from)) $from = substr(current_time('Y-m-01'), 0, 10);
+        if (empty($to))   $to   = substr(current_time('Y-m-d'), 0, 10);
 
         // ── Bước 1: Lấy doanh số thuần (net of returns) theo product ────────
         $sales_rows = $wpdb->get_results($wpdb->prepare(
@@ -540,8 +562,8 @@ class ReportsPage
     {
         global $wpdb;
 
-        if (empty($from)) $from = date('Y-m-01');
-        if (empty($to))   $to   = date('Y-m-d');
+        if (empty($from)) $from = substr(current_time('Y-m-01'), 0, 10);
+        if (empty($to))   $to   = substr(current_time('Y-m-d'), 0, 10);
 
         $rows = $wpdb->get_results($wpdb->prepare(
             "SELECT
