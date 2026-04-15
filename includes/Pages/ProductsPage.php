@@ -70,12 +70,34 @@ class ProductsPage
             ActivityLogger::log('update', 'product', $id, $sku ?: $name, 'Cập nhật sản phẩm: ' . $name . ($sku ? ' [SKU: ' . $sku . ']' : ''));
             wp_send_json_success(['message' => 'Đã cập nhật sản phẩm.']);
         } else {
-            // Check SKU uniqueness
+            // Check SKU uniqueness (only when user provides one).
+            // If sku is empty, generate one and retry on Duplicate Entry error.
             if (! empty($sku)) {
                 $exists = $wpdb->get_var($wpdb->prepare("SELECT id FROM {$table} WHERE sku = %s", $sku));
                 if ($exists) {
                     wp_send_json_error('SKU đã tồn tại.');
                 }
+            } else {
+                // Auto-generate SKU: INSERT and retry on UNIQUE constraint error.
+                // Unlike the PO/order batch codes, here we only generate when the
+                // field is intentionally left blank — so no user-facing retry UX needed.
+                $attempts = 0;
+                $ok = false;
+                do {
+                    $sku = 'SKU-' . strtoupper(bin2hex(random_bytes(4)));
+                    $ok  = $wpdb->insert($table, ['sku' => $sku]) !== false;
+                    if (! $ok && stripos($wpdb->last_error, 'duplicate') === false) {
+                        wp_send_json_error('Lỗi tạo SKU: ' . $wpdb->last_error);
+                    }
+                    $attempts++;
+                } while (! $ok && $attempts < 10);
+                if (! $ok) {
+                    wp_send_json_error('Không thể tạo SKU không trùng lặp. Vui lòng nhập SKU thủ công.');
+                }
+                // Dummy row removed; real insert below rebuilds $data with the real sku
+                $wpdb->query("DELETE FROM {$table} WHERE id = {$wpdb->insert_id}");
+                $data['sku'] = $sku;
+                $fmt = ['%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s'];
             }
             $data['current_stock'] = '0';
             $data['avg_cost']      = '0';

@@ -36,8 +36,8 @@ class DashboardPage
 
         global $wpdb;
 
-        $month_start = date('Y-m-01');
-        $today       = date('Y-m-d');
+        $month_start = substr(current_time('Y-m-01'), 0, 10);
+        $today       = substr(current_time('Y-m-d'), 0, 10);
 
         // KPI: Total products & stock value
         // DB-03 fix: cast to DECIMAL(30,10) before multiply to avoid premature truncation
