@@ -122,11 +122,13 @@
   // The 'alpine:init' event fires when Alpine starts, guaranteeing Alpine is available.
   function registerComponents() {
     Alpine.data('htwDashboard', function () {
+      var lowStockData = window._htwLowStock || [];
       return {
-        kpi:  {},
-        top5: [],
-        chart: null,
-        loading: true,
+        kpi:       {},
+        top5:      [],
+        chart:     null,
+        loading:   true,
+        lowStock:  lowStockData,
 
         init: function () {
           var self = this;
@@ -1476,7 +1478,9 @@
         },
 
         paymentPercent: function (form) {
-          var total = this.grandTotal || parseFloat(form.total_amount || 0);
+          // Use authoritative total_amount from PO, not the live grandTotal getter
+          // (grandTotal reflects unsaved edits in the form, not the actual PO total)
+          var total = parseFloat(form.total_amount || 0);
           if (!total) return 0;
           return Math.min(100, (parseFloat(form.amount_paid || 0) / total) * 100);
         },
@@ -2020,6 +2024,27 @@
               self.showToast(res.data || 'Xoá thất bại.', 'error');
             }
           });
+        },
+
+        // D6 fix: download via AJAX endpoint with nonce + auth check.
+        // Uses a hidden form POST so the browser triggers a file download.
+        downloadSnapshot: function (s) {
+          var form = document.createElement('form');
+          form.method = 'POST';
+          form.action = (window.HTW && window.HTW.ajaxUrl) || (window.htwAdmin && window.htwAdmin.ajaxUrl) || '/wp-admin/admin-ajax.php';
+          form.target = '_blank';
+          form.style.display = 'none';
+          [{ name: 'action', value: 'htw_snapshot_download' },
+           { name: 'nonce',  value: (window.HTW && window.HTW.nonce) || (window.htwAdmin && window.htwAdmin.nonce) || '' },
+           { name: 'filename', value: s.filename }
+          ].forEach(function (f) {
+            var inp = document.createElement('input');
+            inp.type = 'hidden'; inp.name = f.name; inp.value = f.value;
+            form.appendChild(inp);
+          });
+          document.body.appendChild(form);
+          form.submit();
+          document.body.removeChild(form);
         },
 
         rowCnt: function (s, key) {

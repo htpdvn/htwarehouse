@@ -46,7 +46,7 @@ $products = $wpdb->get_results("SELECT * FROM {$wpdb->prefix}htw_products ORDER 
                     <th>Mã lô</th>
                     <th>Nhà cung cấp</th>
                     <th>Ngày nhập</th>
-                    <th>Số SP</th>
+                    <th>Số mã SP</th>
                     <th>G. trị hàng</th>
                     <th>Phí+Thuế</th>
                     <th>Tổng tiền</th>

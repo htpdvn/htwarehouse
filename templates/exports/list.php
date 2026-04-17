@@ -58,7 +58,7 @@ $products = $wpdb->get_results("SELECT id, name, sku, unit, avg_cost, current_st
                     <th>Kênh</th>
                     <th>Ngày</th>
                     <th>Khách hàng</th>
-                    <th>Số SP</th>
+                    <th>Số mã SP</th>
                     <th>Doanh thu</th>
                     <th>Giá vốn</th>
                     <th>Lợi nhuận</th>

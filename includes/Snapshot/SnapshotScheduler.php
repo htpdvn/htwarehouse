@@ -49,16 +49,19 @@ class SnapshotScheduler
      */
     public function schedule(): void
     {
-        if (wp_next_scheduled(self::HOOK_NAME)) {
-            return;
-        }
-
         // Guard: ensure 'htw_daily' interval is registered before scheduling.
         // On plugin activation, init hasn't fired yet so cron_schedules filter
         // may not be present. Register it inline to prevent silent failures.
         add_filter('cron_schedules', [$this, 'add_daily_schedule']);
 
-        // First run: tomorrow at 02:00 AM local time (server time), then repeat daily.
+        // Always clear any existing (possibly non-repeating) event first,
+        // then re-schedule as recurring. Previously the early-return guard
+        // caused a one-time event to persist permanently (BUG: Non-repeating).
+        if (wp_next_scheduled(self::HOOK_NAME)) {
+            $this->clear_schedule();
+        }
+
+        // Next run: tomorrow at 02:00 AM local time (server time), then repeat daily.
         // MUST use a future timestamp — passing time() (past by the time the page
         // renders) causes WordPress to treat it as a one-time event with no recurrence.
         $first_run = strtotime('tomorrow 02:00');

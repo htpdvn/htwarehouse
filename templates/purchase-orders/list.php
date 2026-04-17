@@ -63,7 +63,7 @@ window._htwSuppliersList = <?php echo wp_json_encode($suppliers); ?>;
                     <th>Mã đơn</th>
                     <th>NCC</th>
                     <th>Ngày đặt</th>
-                    <th>Số SP</th>
+                    <th>Số mã SP</th>
                     <th>Tổng đơn</th>
                     <th>Đã TT</th>
                     <th>Còn nợ</th>
@@ -97,10 +97,11 @@ window._htwSuppliersList = <?php echo wp_json_encode($suppliers); ?>;
                                 <!-- Chi tiết: all statuses -->
                                 <button class="htw-btn htw-btn-ghost htw-btn-sm" @click="openDetail(po)">Chi tiết</button>
 
-                                <!-- draft actions -->
-                                <template x-if="po.status === 'draft'">
+                                <!-- draft + confirmed: Sửa -->
+                                <template x-if="po.status === 'draft' || po.status === 'confirmed'">
                                     <button class="htw-btn htw-btn-ghost htw-btn-sm" @click="openEdit(po)">Sửa</button>
                                 </template>
+                                <!-- draft: Gửi đơn -->
                                 <template x-if="po.status === 'draft'">
                                     <button class="htw-btn htw-btn-success htw-btn-sm" @click="confirm(po.id)">Gửi đơn</button>
                                 </template>
@@ -273,7 +274,7 @@ window._htwSuppliersList = <?php echo wp_json_encode($suppliers); ?>;
 
             <div class="htw-modal-footer">
                 <button class="htw-btn htw-btn-ghost" @click="detailModal=false">Đóng</button>
-                <button class="htw-btn htw-btn-primary" x-show="detailTab === 'info' && (detail.status === 'draft' || (detail.status === 'received' && !detail.import_batch_id))" @click="openEditFromDetail()">Sửa đơn</button>
+                <button class="htw-btn htw-btn-primary" x-show="detailTab === 'info' && (detail.status === 'draft' || detail.status === 'confirmed' || (detail.status === 'received' && !detail.import_batch_id))" @click="openEditFromDetail()">Sửa đơn</button>
             </div>
         </div>
     </div>
