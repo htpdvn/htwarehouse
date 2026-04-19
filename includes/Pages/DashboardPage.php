@@ -20,7 +20,7 @@ class DashboardPage
         $low_stock = $wpdb->get_results($wpdb->prepare(
             "SELECT sku, name, current_stock, unit
              FROM {$wpdb->prefix}htw_products
-             WHERE current_stock <= %d
+             WHERE current_stock > 0 AND current_stock <= %d
              ORDER BY current_stock ASC
              LIMIT 10",
             $threshold
@@ -111,24 +111,34 @@ class DashboardPage
             $today
         ), ARRAY_A);
 
-        // KPI: Purchase orders
+        // KPI: Purchase orders chưa chuyển nhập kho
+        // Điều kiện đúng: import_batch_id IS NULL (chưa được link với phiếu nhập kho),
+        // không phụ thuộc vào status — một PO có thể đã 'paid_off' nhưng vẫn chưa nhập kho.
+        // po_pending_value = tổng total_amount của các PO chưa nhập kho (hàng đã đặt, chưa về kho).
         $po_kpi = $wpdb->get_row(
             "SELECT COUNT(*) AS active_pos,
                     COALESCE(SUM(amount_remaining), 0) AS total_debt,
-                    SUM(CASE WHEN status = 'draft' THEN 1 ELSE 0 END) AS draft_pos
+                    COALESCE(SUM(total_amount), 0)     AS pending_value
              FROM {$wpdb->prefix}htw_purchase_orders
-             WHERE status IN ('draft', 'confirmed', 'received')"
+             WHERE import_batch_id IS NULL"
+        );
+
+        // KPI: Tổng tiền đã thanh toán cho NCC (toàn bộ lịch sử)
+        $po_paid = $wpdb->get_var(
+            "SELECT COALESCE(SUM(amount_paid), 0) FROM {$wpdb->prefix}htw_purchase_orders"
         );
 
         wp_send_json_success([
             'kpi'   => [
-                'total_stock_qty' => (float) $stock_kpi->total_stock_qty,
-                'inventory_value' => (float) $stock_kpi->inventory_value,
-                'revenue'         => (float) $month_kpi->revenue,
-                'profit'          => (float) $month_kpi->profit,
-                'total_orders'    => (int)   $month_kpi->total_orders,
-                'po_active'       => (int)   $po_kpi->active_pos,
-                'po_debt'         => (float) $po_kpi->total_debt,
+                'total_stock_qty'  => (float) $stock_kpi->total_stock_qty,
+                'inventory_value'  => (float) $stock_kpi->inventory_value,
+                'po_pending_value' => (float) $po_kpi->pending_value,
+                'revenue'          => (float) $month_kpi->revenue,
+                'profit'           => (float) $month_kpi->profit,
+                'total_orders'     => (int)   $month_kpi->total_orders,
+                'po_active'        => (int)   $po_kpi->active_pos,
+                'po_debt'          => (float) $po_kpi->total_debt,
+                'po_paid_total'    => (float) $po_paid,
             ],
             'chart' => $chart,
             'top5'  => $top5,

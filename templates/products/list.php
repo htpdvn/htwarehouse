@@ -91,9 +91,30 @@ $products = $wpdb->get_results("SELECT * FROM {$wpdb->prefix}htw_products ORDER 
                     <th>Tên sản phẩm</th>
                     <th>Danh mục</th>
                     <th>ĐVT</th>
-                    <th>SL Tồn kho</th>
-                    <th>Giá vốn 1 SP</th>
-                    <th>Giá trị tồn kho</th>
+                    <th
+                        @click="sortBy('current_stock')"
+                        style="cursor:pointer;user-select:none;white-space:nowrap;"
+                        :style="sortKey==='current_stock' ? 'color:var(--htw-info)' : ''"
+                    >
+                        SL Tồn kho
+                        <span x-text="sortKey==='current_stock' ? (sortDir==='asc' ? ' ↑' : ' ↓') : ' ↕'" style="font-size:.8em;opacity:.7;"></span>
+                    </th>
+                    <th
+                        @click="sortBy('avg_cost')"
+                        style="cursor:pointer;user-select:none;white-space:nowrap;"
+                        :style="sortKey==='avg_cost' ? 'color:var(--htw-info)' : ''"
+                    >
+                        Giá vốn 1 SP
+                        <span x-text="sortKey==='avg_cost' ? (sortDir==='asc' ? ' ↑' : ' ↓') : ' ↕'" style="font-size:.8em;opacity:.7;"></span>
+                    </th>
+                    <th
+                        @click="sortBy('inventory_value')"
+                        style="cursor:pointer;user-select:none;white-space:nowrap;"
+                        :style="sortKey==='inventory_value' ? 'color:var(--htw-info)' : ''"
+                    >
+                        Giá trị tồn kho
+                        <span x-text="sortKey==='inventory_value' ? (sortDir==='asc' ? ' ↑' : ' ↓') : ' ↕'" style="font-size:.8em;opacity:.7;"></span>
+                    </th>
                     <th></th>
                 </tr>
             </thead>
@@ -102,7 +123,10 @@ $products = $wpdb->get_results("SELECT * FROM {$wpdb->prefix}htw_products ORDER 
                     <tr>
                         <td>
                             <template x-if="p.image_url">
-                                <img :src="p.image_url" class="htw-img-preview">
+                                <img :src="p.image_url" class="htw-img-preview"
+                                    @mouseenter="htwShowZoom($event, p.image_url, p.name)"
+                                    @mouseleave="htwHideZoom()"
+                                    @mousemove="htwMoveZoom($event)">
                             </template>
                             <template x-if="!p.image_url">
                                 <div style="width:70px;height:70px;background:var(--htw-surface-2);border-radius:8px;border:1px solid var(--htw-border);display:flex;align-items:center;justify-content:center;color:var(--htw-text-muted);">
@@ -235,3 +259,85 @@ $products = $wpdb->get_results("SELECT * FROM {$wpdb->prefix}htw_products ORDER 
     </div>
 
 </div>
+
+<script>
+(function() {
+    // Build panel with 100% inline styles — no CSS dependency
+    const panel = document.createElement('div');
+    panel.id = 'htw-img-zoom-panel';
+    panel.style.cssText = [
+        'position:fixed',
+        'top:-9999px',
+        'left:-9999px',
+        'z-index:99999',
+        'pointer-events:none',
+        'opacity:0',
+        'transition:opacity .22s ease,transform .22s ease',
+        'transform:scale(.88) translateY(6px)',
+        'filter:drop-shadow(0 12px 40px rgba(30,33,48,.28))',
+        'background:#fff',
+        'border-radius:14px',
+        'padding:6px',
+        'border:1.5px solid #dde1ec',
+    ].join(';');
+
+    const zImg = document.createElement('img');
+    zImg.style.cssText = 'display:block;width:330px;height:330px;object-fit:contain;border-radius:10px;';
+    zImg.alt = '';
+
+    const zLabel = document.createElement('div');
+    zLabel.style.cssText = [
+        'font-size:.72rem',
+        'color:#6b7280',
+        'text-align:center',
+        'font-family:Inter,sans-serif',
+        'padding:5px 8px 3px',
+        'white-space:nowrap',
+        'overflow:hidden',
+        'text-overflow:ellipsis',
+        'max-width:330px',
+    ].join(';');
+
+    panel.appendChild(zImg);
+    panel.appendChild(zLabel);
+    document.body.appendChild(panel);
+
+    let _timer = null;
+
+    function positionPanel(e) {
+        const pw = 378, ph = 410, margin = 18;
+        let x = e.clientX + margin;
+        let y = e.clientY - ph / 2;
+        if (x + pw > window.innerWidth  - margin) x = e.clientX - pw - margin;
+        if (y < margin)                           y = margin;
+        if (y + ph > window.innerHeight - margin) y = window.innerHeight - ph - margin;
+        panel.style.left = x + 'px';
+        panel.style.top  = y + 'px';
+    }
+
+    window.htwShowZoom = function(e, url, name) {
+        clearTimeout(_timer);
+        zImg.src           = url;
+        zLabel.textContent = name || '';
+        positionPanel(e);
+        _timer = setTimeout(function() {
+            panel.style.opacity   = '1';
+            panel.style.transform = 'scale(1) translateY(0)';
+        }, 80);
+    };
+
+    window.htwHideZoom = function() {
+        clearTimeout(_timer);
+        panel.style.opacity   = '0';
+        panel.style.transform = 'scale(.88) translateY(6px)';
+        setTimeout(function() {
+            panel.style.top  = '-9999px';
+            panel.style.left = '-9999px';
+        }, 230);
+    };
+
+    window.htwMoveZoom = function(e) {
+        if (parseFloat(panel.style.opacity) > 0) positionPanel(e);
+    };
+})();
+</script>

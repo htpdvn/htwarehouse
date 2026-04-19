@@ -4,7 +4,7 @@
  * Plugin Name: HTWarehouse
  * Plugin URI:  https://thebanker.online
  * Description: Phần mềm quản lý kho hàng: nhập hàng theo lô, xuất kho, tính giá vốn bình quân gia quyền (WAC), báo cáo lợi nhuận theo sản phẩm và kênh bán.
- * Version:     1.0.3
+ * Version:     1.0.4
  * Author:      HTWarehouse
  * Text Domain: htwarehouse
  * Domain Path: /languages
@@ -13,7 +13,7 @@
 defined('ABSPATH') || exit;
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-define('HTW_VERSION',    '1.0.3');
+define('HTW_VERSION',    '1.1.0');
 define('HTW_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('HTW_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('HTW_PLUGIN_FILE', __FILE__);

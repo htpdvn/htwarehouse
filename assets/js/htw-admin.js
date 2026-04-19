@@ -231,6 +231,8 @@
         saving:     false,
         alertMsg:   '',
         alertType:  '',
+        sortKey:    '',        // 'avg_cost' | 'current_stock' | 'inventory_value'
+        sortDir:    'desc',    // 'asc' | 'desc'
 
         // ── Category combo-box state ──────────────────────────────────────
         categories:    [],   // all distinct existing categories
@@ -285,12 +287,37 @@
         },
 
         filtered: function () {
-          var q = this.search.toLowerCase();
-          return this.products.filter(function (p) {
+          var q   = this.search.toLowerCase();
+          var key = this.sortKey;
+          var dir = this.sortDir;
+          var list = this.products.filter(function (p) {
             return !q || p.name.toLowerCase().includes(q) ||
-                   p.sku.toLowerCase().includes(q) ||
-                   p.category.toLowerCase().includes(q);
+                   (p.sku || '').toLowerCase().includes(q) ||
+                   (p.category || '').toLowerCase().includes(q);
           });
+          if (key) {
+            list = list.slice().sort(function (a, b) {
+              var av, bv;
+              if (key === 'inventory_value') {
+                av = parseFloat(a.current_stock) * parseFloat(a.avg_cost || 0);
+                bv = parseFloat(b.current_stock) * parseFloat(b.avg_cost || 0);
+              } else {
+                av = parseFloat(a[key] || 0);
+                bv = parseFloat(b[key] || 0);
+              }
+              return dir === 'asc' ? av - bv : bv - av;
+            });
+          }
+          return list;
+        },
+
+        sortBy: function (key) {
+          if (this.sortKey === key) {
+            this.sortDir = this.sortDir === 'asc' ? 'desc' : 'asc';
+          } else {
+            this.sortKey = key;
+            this.sortDir = 'desc';
+          }
         },
 
         openAdd: function () {

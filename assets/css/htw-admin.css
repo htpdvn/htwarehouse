@@ -19,6 +19,7 @@
   --htw-warning: #d97706;
   --htw-danger: #dc2626;
   --htw-info: #0284c7;
+  --htw-teal: #0d9488;
   --htw-text: #1e2130;
   --htw-text-muted: #6b7280;
   --htw-radius: 10px;
@@ -175,6 +176,12 @@
 .htw-kpi-card.red::before {
   background: var(--htw-danger);
 }
+.htw-kpi-card.orange::before {
+  background: #ea580c;
+}
+.htw-kpi-card.teal::before {
+  background: var(--htw-teal);
+}
 .htw-kpi-label {
   font-size: 0.78rem;
   color: var(--htw-text-muted);
@@ -274,6 +281,8 @@
 .htw-modal-overlay {
   position: fixed;
   inset: 0;
+  top: 32px;                           /* WP admin bar desktop height */
+  height: calc(100% - 32px);
   background: rgba(30, 33, 48, 0.45);
   display: flex;
   align-items: center;
@@ -308,6 +317,7 @@
   margin-top: 24px;
   padding-top: 18px;
   border-top: 1px solid var(--htw-border);
+  flex-wrap: wrap;
 }
 
 /* ── Badges ──────────────────────────────────────────────────────────────────── */
@@ -396,11 +406,59 @@
   object-fit: cover;
   border-radius: 8px;
   border: 1px solid var(--htw-border);
+  cursor: zoom-in;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+.htw-img-preview:hover {
+  transform: scale(1.07);
+  box-shadow: 0 4px 16px rgba(60,60,120,0.18);
 }
 .htw-img-cell {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+/* ── Image zoom panel (hover popup) ─────────────────────────────────────────── */
+#htw-img-zoom-panel {
+  position: fixed;
+  top: -9999px;
+  left: -9999px;
+  z-index: 99999;
+  pointer-events: none;
+  opacity: 0;
+  transform: scale(0.88) translateY(6px);
+  transition: opacity 0.22s ease, transform 0.22s ease;
+  filter: drop-shadow(0 12px 40px rgba(30,33,48,0.28));
+}
+#htw-img-zoom-panel.visible {
+  opacity: 1;
+  transform: scale(1) translateY(0);
+}
+#htw-img-zoom-panel img {
+  width: 220px;
+  height: 220px;
+  object-fit: contain;
+  border-radius: 12px;
+  border: 2px solid var(--htw-border);
+  background: var(--htw-surface);
+  display: block;
+}
+#htw-img-zoom-panel .htw-zoom-label {
+  margin-top: 6px;
+  font-size: 0.72rem;
+  color: var(--htw-text-muted);
+  text-align: center;
+  font-family: 'Inter', sans-serif;
+  background: var(--htw-surface);
+  border: 1px solid var(--htw-border);
+  border-top: none;
+  border-radius: 0 0 10px 10px;
+  padding: 4px 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 220px;
 }
 
 /* ── Items table inside modal ────────────────────────────────────────────────── */
@@ -418,6 +476,31 @@
 .htw-items-table .htw-input {
   padding: 6px 8px;
   font-size: 0.82rem;
+}
+
+/* ── Named form grid classes (dùng trong modal PO) ──────────────────────────── */
+.htw-supplier-grid {
+  grid-template-columns: repeat(3, 1fr);
+  margin-bottom: 16px;
+}
+.htw-fees-grid {
+  grid-template-columns: repeat(6, 1fr);
+}
+
+/* ── Named form grid classes (dùng trong modal Exports) ─────────────────────── */
+.htw-export-info-grid {
+  grid-template-columns: repeat(4, 1fr);
+  margin-bottom: 20px;
+}
+.htw-export-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.htw-return-info-grid {
+  grid-template-columns: repeat(2, 1fr);
+  margin-bottom: 20px;
 }
 
 /* ── Chart containers ────────────────────────────────────────────────────────── */
@@ -555,13 +638,180 @@
     grid-template-columns: 1fr 1fr;
   }
 }
-@media (max-width: 600px) {
-  .htw-kpi-grid {
-    grid-template-columns: 1fr;
+
+/* ── Mobile: Tablet (≤768px) ─────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  /* Modal overlay → bottom-sheet, bắt đầu dưới WP admin bar để không chặn menu toggle */
+  .htw-modal-overlay {
+    align-items: flex-end;
+    padding: 0;
+    top: 46px;                /* WP admin bar height trên mobile */
+    height: calc(100% - 46px);
   }
-  .htw-wrap {
-    padding: 16px 12px;
+
+  /* Đảm bảo WP admin bar luôn clickable khi modal mở */
+  #wpadminbar {
+    z-index: 100000 !important;
   }
+
+  /* Modal: full-width, góc tròn phía trên */
+  .htw-modal {
+    width: 100%;
+    max-width: 100% !important;
+    border-radius: 18px 18px 0 0;
+    padding: 20px 16px 24px;
+    max-height: 92vh;
+  }
+
+  /* Title nhỏ hơn */
+  .htw-modal-title {
+    font-size: 1rem;
+    margin-bottom: 16px;
+  }
+
+  /* Footer: nút full-width, stack dọc */
+  .htw-modal-footer {
+    flex-direction: column-reverse;
+    gap: 8px;
+  }
+  .htw-modal-footer .htw-btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  /* Tabs: scroll ngang mượt */
+  .htw-tabs {
+    overflow-x: auto;
+    white-space: nowrap;
+    flex-wrap: nowrap;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .htw-tabs::-webkit-scrollbar { display: none; }
+
+  /* Supplier info grid: 3 cột → 1 cột */
+  .htw-supplier-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Export info grid: 4 cột → 2 cột */
+  .htw-export-info-grid {
+    grid-template-columns: 1fr 1fr !important;
+  }
+
+  /* Export summary (doanh thu / giá vốn / lợi nhuận): 3 cột → 1 cột */
+  .htw-export-summary-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Return info grid: 2 cột → 1 cột */
+  .htw-return-info-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Detail info 2-cột (các modal khác) → 1 cột */
+  .htw-modal [style*="grid-template-columns:1fr 1fr"],
+  .htw-modal [style*="grid-template-columns: 1fr 1fr"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Fees: 6 cột → 2 cột */
+  .htw-fees-grid {
+    grid-template-columns: 1fr 1fr !important;
+  }
+
+  /* Date inputs: thu gọn */
+  .htw-input[style*="width:70px"],
+  .htw-input[style*="width: 70px"] {
+    width: 58px !important;
+    padding: 8px 4px;
+  }
+  .htw-input[style*="width:90px"],
+  .htw-input[style*="width: 90px"] {
+    width: 72px !important;
+  }
+
+  /* ── Items table: Card layout ─────────────────────────── */
+  .htw-items-thead { display: none; }
+  .htw-items-table-wrap {
+    overflow: visible;
+    border: none;
+    background: transparent;
+  }
+  .htw-items-table { display: block; }
+  .htw-items-table tbody { display: block; }
+
+  /* Mỗi dòng = 1 card */
+  .htw-item-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    background: var(--htw-surface);
+    border: 1px solid var(--htw-border);
+    border-radius: 10px;
+    padding: 12px;
+    margin-bottom: 10px;
+  }
+  .htw-item-row td {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    border: none !important;
+    padding: 0 !important;
+    font-size: 0.82rem;
+  }
+  .htw-item-row td::before {
+    content: attr(data-label);
+    font-size: 0.68rem;
+    font-weight: 700;
+    color: var(--htw-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .htw-item-row td[data-label="Sản phẩm"] { grid-column: 1 / -1; }
+  .htw-item-row td[data-label="Thành tiền"] {
+    color: var(--htw-success);
+    font-weight: 700;
+    font-size: 0.9rem;
+    align-self: center;
+  }
+  .htw-item-del-cell { align-items: flex-end; justify-content: flex-end; }
+  .htw-item-del-cell::before { content: none !important; }
+  .htw-item-row .htw-input,
+  .htw-item-row .htw-select { padding: 8px 10px; font-size: 0.82rem; }
+
+  .htw-items-table tfoot { display: block; }
+  .htw-items-footer-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 4px;
+    border-top: 1px solid var(--htw-border);
+    margin-top: 4px;
+  }
+  .htw-items-footer-row td { display: contents; border: none !important; padding: 0 !important; }
+  .htw-items-total-cell { font-size: 1rem; font-weight: 700; color: var(--htw-text) !important; }
+
+  .htw-table-wrap { border-radius: 8px; }
+}
+
+/* ── Mobile: Phone nhỏ (≤480px) ─────────────────────────────────────────────── */
+@media (max-width: 480px) {
+  .htw-kpi-grid { grid-template-columns: 1fr; }
+  .htw-wrap { padding: 16px 12px; }
+
+  /* Fees: 2 cột → 1 cột */
+  .htw-fees-grid { grid-template-columns: 1fr !important; }
+
+  /* Items card: 1 cột */
+  .htw-item-row { grid-template-columns: 1fr; }
+  .htw-item-del-cell { align-items: flex-start; }
+  .htw-item-del-cell .htw-btn { width: 100%; justify-content: center; }
+
+  .htw-modal { padding: 16px 12px 20px; }
+
+  .htw-table td > div[style*="display:flex"] { flex-wrap: wrap; gap: 4px !important; }
+  .htw-btn-sm { padding: 5px 9px; font-size: 0.72rem; }
 }
 
 /* ── Snapshot Page ────────────────────────────────────────────────────────────── */

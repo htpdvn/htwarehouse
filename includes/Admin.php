@@ -28,6 +28,8 @@ class Admin
         add_action('admin_head',             [$this, 'render_menu_separator_css']);
         add_action('admin_enqueue_scripts', [$this, 'enqueue_assets']);
         add_filter('script_loader_tag',      [$this, 'add_sri_attributes'], 10, 2);
+        // Override WP admin viewport meta for responsive layout on HTW pages
+        add_action('admin_init',             [$this, 'maybe_fix_viewport']);
 
         // AJAX handlers
         add_action('wp_ajax_htw_save_product',            [Pages\ProductsPage::class, 'ajax_save']);
@@ -155,6 +157,47 @@ class Admin
             }
         </style>
 <?php
+    }
+
+    /**
+     * Override WP admin viewport meta for HTWarehouse pages.
+     * WP admin outputs: <meta name='viewport' content='width=1024' />
+     * We need: width=device-width so mobile media queries fire correctly.
+     * Uses ob_start to intercept the full page output and replace the viewport content.
+     */
+    public function maybe_fix_viewport(): void
+    {
+        $screen = get_current_screen();
+        // get_current_screen() may return null during admin_init on non-screen requests
+        if (! $screen) {
+            // Fallback: check $_GET['page']
+            $page = isset($_GET['page']) ? sanitize_key($_GET['page']) : '';
+            $htw_prefixed = (strpos($page, 'htwarehouse') === 0 || strpos($page, 'htw-') === 0);
+            if (! $htw_prefixed) return;
+        } else {
+            $htw_pages = [
+                'toplevel_page_htwarehouse',
+                'htwarehouse_page_htw-products',
+                'htwarehouse_page_htw-suppliers',
+                'htwarehouse_page_htw-imports',
+                'htwarehouse_page_htw-exports',
+                'htwarehouse_page_htw-reports',
+                'htwarehouse_page_htw-purchase-orders',
+                'htwarehouse_page_htw-snapshots',
+                'htwarehouse_page_htw-activity-log',
+            ];
+            if (! in_array($screen->id, $htw_pages, true)) return;
+        }
+
+        ob_start(function (string $html): string {
+            // Replace WP admin's fixed viewport with responsive one
+            return str_replace(
+                ["content='width=1024'", 'content="width=1024"',
+                 "content='width=width=device-width'"], // guard double-replace
+                'content="width=device-width, initial-scale=1.0"',
+                $html
+            );
+        });
     }
 
     public function enqueue_assets(string $hook): void

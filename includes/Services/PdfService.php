@@ -20,12 +20,15 @@ class PdfService
     private float $ph = 190;  // content height
     private float $ml = 15;   // margin left
     private float $mt = 10;   // margin top
+    private float $y  = 10;   // current drawing Y position (mm)
 
     private string $companyName = '';
     private string $companyAddr = '';
     private string $companyTax  = '';
     private string $reportCode  = '';
     private string $reportTitle = '';
+    private string $dateFrom     = '';
+    private string $dateTo       = '';
 
     // Grayscale palette — B&W printer safe
     private const C_BLACK   = [20, 20, 20];
@@ -51,7 +54,7 @@ class PdfService
     ): string {
         $inst = new self();
         $inst->currency = $currency;
-        $inst->setMeta($report);
+        $inst->setMeta($report, $dateFrom, $dateTo);
         $inst->build($report, $dateFrom, $dateTo, $data);
         return $inst->pdf->Output('', 'S');
     }
@@ -90,8 +93,70 @@ class PdfService
         $this->drawFooter();
     }
 
-    private function setMeta(string $r): void
-    {
+    private const FOOTER_H = 7; // reserved height for footer at page bottom
+
+    /**
+     * Check if there's enough room to draw $needed mm of content.
+     * If not, start a new page.
+     */
+    private function ensurePage(float $needed): void {
+        $pageH = $this->pdf->getPageHeight();
+        $bottomEdge = $pageH - self::FOOTER_H;
+        if ($this->y + $needed > $bottomEdge) {
+            $this->drawFooter();
+            $this->pdf->AddPage();
+            $this->drawPageHeader();
+            // drawPageHeader() already sets $this->y correctly at its end
+        }
+    }
+
+    /**
+     * Redraw the thin top-bar and report title on a new page.
+     */
+    private function drawPageHeader(): void {
+        $l = $this->ml;
+        $w = $this->pw;
+        $y = $this->mt;
+
+        $barH = 18;
+        $this->rect($l, $y, $w, $barH, self::C_DARK);
+
+        $this->f(self::FONT_B, 10, self::C_WHITE);
+        $this->cellL($l + 4, $y + 4, 200, 5, $this->companyName ?: '');
+
+        $bw = 30;
+        $bx = $l + $w - $bw - 4;
+        $this->rect($bx, $y + 3, $bw, 12, self::C_DARK);
+        $this->f(self::FONT_B, 9, self::C_WHITE);
+        $this->cellC($bx, $y + 4, $bw, 5, $this->reportCode);
+
+        $this->line($l, $y + $barH, $l + $w, $y + $barH, self::C_LINER, 0.3);
+
+        // After bar: add small gap then repeat the colored-left-bar title strip
+        // so continuation pages look consistent with page 1.
+        $stripY = $y + $barH + 4;         // 32mm
+        $stripH = 22;
+        $this->rect($l, $stripY, 4, $stripH, self::C_DARK);
+
+        $this->f(self::FONT_B, 12, self::C_BLACK);
+        $this->cellL($l + 7, $stripY + 3, $w - 10, 7, mb_strtoupper($this->reportTitle, 'UTF-8'));
+
+        $this->f(self::FONT, 8.5, self::C_MID);
+        $period = $this->dateFrom && $this->dateTo
+            ? ('Kỳ  ' . $this->d($this->dateFrom) . '  –  ' . $this->d($this->dateTo))
+            : ('Tính đến  ' . $this->d(date('Y-m-d')));
+        $this->cellL($l + 7, $stripY + 12, $w - 80, 4, $period);
+
+        $this->line($l, $stripY + $stripH, $l + $w, $stripY + $stripH, self::C_LINER, 0.4);
+
+        $this->y = $stripY + $stripH + 4;
+
+        // Reset font to default row style so the first detail row on
+        // continuation pages looks identical to rows on page 1.
+        $this->f(self::FONT, 7.5, self::C_DARK);
+    }
+
+    private function setMeta(string $r, string $from = '', string $to = ''): void {
         $this->reportCode = [
             'stock'               => 'RPT-01',
             'movement'           => 'RPT-02',
@@ -107,6 +172,9 @@ class PdfService
             'profit_by_channel'   => 'Lãi Lỗ Theo Kênh Bán',
             'product_performance' => 'Hiệu Suất Dòng Sản Phẩm',
         ][$r] ?? 'Báo Cáo';
+
+        $this->dateFrom = $from;
+        $this->dateTo   = $to;
     }
 
     // ─── Formatters ─────────────────────────────────────────────────────────
@@ -190,69 +258,70 @@ class PdfService
         $l = $this->ml;
         $w = $this->pw;
         $re = $l + $w;
-        $y = $this->mt;
+        $this->y = $this->mt;
 
         // ── Top bar
         $barH = 22;
-        $this->rect($l, $y, $w, $barH, self::C_DARK);
+        $this->rect($l, $this->y, $w, $barH, self::C_DARK);
 
         $this->f(self::FONT_B, 11, self::C_WHITE);
-        $this->cellL($l + 5, $y + 5, 200, 6, $this->companyName ?: '');
+        $this->cellL($l + 5, $this->y + 5, 200, 6, $this->companyName ?: '');
 
         if ($this->companyAddr || $this->companyTax) {
             $this->f(self::FONT, 7.5, [160, 160, 160]);
             $line = trim(($this->companyAddr ?: '') . ($this->companyTax ? '   |   MST: ' . $this->companyTax : ''));
-            $this->cellL($l + 5, $y + 12, 220, 4, $line);
+            $this->cellL($l + 5, $this->y + 12, 220, 4, $line);
         }
 
         $bw = 30;
         $bx = $l + $w - $bw - 4;
-        $this->rect($bx, $y + 4, $bw, 14, self::C_DARK);
+        $this->rect($bx, $this->y + 4, $bw, 14, self::C_DARK);
         $this->f(self::FONT_B, 10, self::C_WHITE);
-        $this->cellC($bx, $y + 5, $bw, 6, $this->reportCode);
+        $this->cellC($bx, $this->y + 5, $bw, 6, $this->reportCode);
         $this->f(self::FONT, 7, self::C_LIGHT);
-        $this->cellC($bx, $y + 11, $bw, 5, $this->companyName ? substr($this->companyName, 0, 14) : '');
+        $this->cellC($bx, $this->y + 11, $bw, 5, $this->companyName ? substr($this->companyName, 0, 14) : '');
 
-        $y += $barH + 6;
+        $this->y += $barH + 6;
 
         // ── Title section
-        $this->rect($l, $y, 4, 22, self::C_DARK);
+        $this->rect($l, $this->y, 4, 22, self::C_DARK);
 
         $this->f(self::FONT_B, 14, self::C_BLACK);
-        $this->cellL($l + 7, $y + 3, $w - 10, 7, mb_strtoupper($this->reportTitle, 'UTF-8'));
+        $this->cellL($l + 7, $this->y + 3, $w - 10, 7, mb_strtoupper($this->reportTitle, 'UTF-8'));
 
         $period = ($report === 'stock')
             ? ('Tính đến  ' . $this->d($to ?: date('Y-m-d')))
             : ('Kỳ  ' . $this->d($from) . '  –  ' . $this->d($to));
         $this->f(self::FONT, 8.5, self::C_MID);
-        $this->cellL($l + 7, $y + 12, $w - 80, 4, $period);
+        $this->cellL($l + 7, $this->y + 12, $w - 80, 4, $period);
 
         $this->f(self::FONT, 8, self::C_SLATE);
-        $this->cellL($l + $w - 52, $y + 12, 52, 4, 'Xuất  ' . date('d/m/Y, H:i'));
+        $this->cellL($l + $w - 52, $this->y + 12, 52, 4, 'Xuất  ' . date('d/m/Y, H:i'));
 
-        $this->line($l, $y + 22, $l + $w, $y + 22, self::C_LINER, 0.4);
+        $this->line($l, $this->y + 22, $l + $w, $this->y + 22, self::C_LINER, 0.4);
 
-        $y += 28;
+        $this->y += 28;
 
         switch ($report) {
             case 'stock':
-                $y = $this->tblStock($y, $data['rows'] ?? [], $data);
+                $this->y = $this->tblStock($this->y, $data['rows'] ?? [], $data);
                 break;
             case 'movement':
-                $y = $this->tblMovement($y, $data['rows'] ?? []);
+                $this->y = $this->tblMovement($this->y, $data['rows'] ?? []);
                 break;
             case 'profit_by_product':
-                $y = $this->tblProfitProduct($y, $data['rows'] ?? [], $data);
+                $this->y = $this->tblProfitProduct($this->y, $data['rows'] ?? [], $data);
                 break;
             case 'profit_by_channel':
-                $y = $this->tblChannel($y, $data['rows'] ?? [], $data);
+                $this->y = $this->tblChannel($this->y, $data['rows'] ?? [], $data);
                 break;
             case 'product_performance':
-                $y = $this->tblPerformance($y, $data['rows'] ?? [], $data);
+                $this->y = $this->tblPerformance($this->y, $data['rows'] ?? [], $data);
                 break;
         }
 
-        $this->drawSignature($y + 6);
+        $this->ensurePage(32); // reserve height for signature block
+        $this->drawSignature($this->y + 6);
     }
 
     // ─── Stock table ──────────────────────────────────────────────────────
@@ -266,25 +335,23 @@ class PdfService
         // Column widths (mm), sum = $w
         $cols = [22, 54, 46, 14, 26, 34, 28];
         //     [0]   [1]   [2]    [3]  [4]   [5]     [6]
-        // Cumulative start positions:
-        // col0=0, col1=22, col2=76, col3=122, col4=136, col5=162, col6=196, col7=230
 
         $h  = 8;
         $rh = 6.5;
 
         // Header row
-        $this->rect($l, $y, $w, $h, self::C_DARK);
+        $this->rect($l, $this->y, $w, $h, self::C_DARK);
         $this->f(self::FONT_B, 7.5, self::C_WHITE);
 
-        $this->cellL($l + 2, $y + 1.5, $cols[0], $h, 'SKU');
-        $this->cellL($l + 2 + $cols[0], $y + 1.5, $cols[1], $h, 'Tên Sản Phẩm');
-        $this->cellL($l + 2 + $cols[0] + $cols[1], $y + 1.5, $cols[2], $h, 'Danh Mục');
-        $this->cellL($l + $cols[0] + $cols[1] + $cols[2] + 2, $y + 1.5, $cols[3], $h, 'ĐVT');
-        $this->cellL($l + $cols[0] + $cols[1] + $cols[2] + $cols[3] + 2, $y + 1.5, $cols[4], $h, 'SL Tồn Kho');
-        $this->cellL($l + $cols[0] + $cols[1] + $cols[2] + $cols[3] + $cols[4] + 2, $y + 1.5, $cols[5], $h, 'Giá Vốn TB');
-        $this->cellL($l + $cols[0] + $cols[1] + $cols[2] + $cols[3] + $cols[4] + $cols[5] + 2, $y + 1.5, $cols[6], $h, 'Giá Trị Lưu Kho');
+        $this->cellL($l + 2, $this->y + 1.5, $cols[0], $h, 'SKU');
+        $this->cellL($l + 2 + $cols[0], $this->y + 1.5, $cols[1], $h, 'Tên Sản Phẩm');
+        $this->cellL($l + 2 + $cols[0] + $cols[1], $this->y + 1.5, $cols[2], $h, 'Danh Mục');
+        $this->cellL($l + $cols[0] + $cols[1] + $cols[2] + 2, $this->y + 1.5, $cols[3], $h, 'ĐVT');
+        $this->cellL($l + $cols[0] + $cols[1] + $cols[2] + $cols[3] + 2, $this->y + 1.5, $cols[4], $h, 'SL Tồn Kho');
+        $this->cellL($l + $cols[0] + $cols[1] + $cols[2] + $cols[3] + $cols[4] + 2, $this->y + 1.5, $cols[5], $h, 'Giá Vốn TB');
+        $this->cellL($l + $cols[0] + $cols[1] + $cols[2] + $cols[3] + $cols[4] + $cols[5] + 2, $this->y + 1.5, $cols[6], $h, 'Giá Trị Lưu Kho');
 
-        $y += $h;
+        $this->y += $h;
 
         $this->f(self::FONT, 7.5, self::C_DARK);
         $this->bd(self::C_LINER);
@@ -293,8 +360,10 @@ class PdfService
         $totalVal   = 0.0;
         $totalStock = 0.0;
         foreach ($rows as $i => $r) {
-            if ($i % 2 === 1) $this->rect($l, $y, $w, $rh, self::C_ALT);
-            $this->line($l, $y + $rh, $re, $y + $rh, self::C_LINER, 0.1);
+            $this->ensurePage($rh);
+
+            if ($i % 2 === 1) $this->rect($l, $this->y, $w, $rh, self::C_ALT);
+            $this->line($l, $this->y + $rh, $re, $this->y + $rh, self::C_LINER, 0.1);
 
             $stock   = (float) ($r['current_stock'] ?? 0);
             $invVal  = (float) ($r['inventory_value'] ?? 0);
@@ -302,7 +371,7 @@ class PdfService
             $totalVal   += $invVal;
             $totalStock += $stock;
 
-            $ty = $y + 1.2;
+            $ty = $this->y + 1.2;
 
             $this->cellL($l + 2, $ty, $cols[0], $rh, substr((string) ($r['sku'] ?? '—'), 0, 12));
             $this->cellL($l + 2 + $cols[0], $ty, $cols[1], $rh, substr((string) ($r['name'] ?? '—'), 0, 32));
@@ -314,24 +383,22 @@ class PdfService
             $this->cellL($l + $cols[0] + $cols[1] + $cols[2] + $cols[3] + $cols[4] + $cols[5] + 2, $ty, $cols[6], $rh, $this->m($invVal));
             $this->f(self::FONT, 7.5, self::C_DARK);
 
-            $y += $rh;
+            $this->y += $rh;
         }
 
-        $y += 2;
+        $this->ensurePage($rh + 2 + 10);
+        $this->y += 2;
         $th = 10;
-        $this->rect($l, $y, $w, $th, self::C_ALT);
-        $this->line($l, $y, $l + $w, $y, self::C_BLACK, 0.5);
-        $this->line($l, $y + $th, $l + $w, $y + $th, self::C_BLACK, 0.5);
+        $this->rect($l, $this->y, $w, $th, self::C_ALT);
+        $this->line($l, $this->y, $l + $w, $this->y, self::C_BLACK, 0.5);
+        $this->line($l, $this->y + $th, $l + $w, $this->y + $th, self::C_BLACK, 0.5);
 
         $this->f(self::FONT_B, 8, self::C_BLACK);
-        // "X dòng sản phẩm" — thẳng hàng cột Tên Sản Phẩm / Danh Mục (col[1])
-        $this->cellL($l + $cols[0] + 2, $y, $cols[1] + $cols[2], $th, count($rows) . '  dòng sản phẩm');
-        // Tổng SL Tồn Kho — thẳng hàng cột SL Tồn Kho (col[4])
-        $this->cellL($l + $cols[0] + $cols[1] + $cols[2] + $cols[3] + 2, $y, $cols[4], $th, $this->n($totalStock));
-        // Tổng Giá Trị Lưu Kho — thẳng hàng cột Giá Trị Lưu Kho (col[6])
-        $this->cellL($l + $cols[0] + $cols[1] + $cols[2] + $cols[3] + $cols[4] + $cols[5] + 2, $y, $cols[6], $th, $this->m($totalVal));
+        $this->cellL($l + $cols[0] + 2, $this->y, $cols[1] + $cols[2], $th, count($rows) . '  dòng sản phẩm');
+        $this->cellL($l + $cols[0] + $cols[1] + $cols[2] + $cols[3] + 2, $this->y, $cols[4], $th, $this->n($totalStock));
+        $this->cellL($l + $cols[0] + $cols[1] + $cols[2] + $cols[3] + $cols[4] + $cols[5] + 2, $this->y, $cols[6], $th, $this->m($totalVal));
 
-        return $y + $th;
+        return $this->y + $th;
     }
 
     // ─── Movement table ──────────────────────────────────────────────────
@@ -344,38 +411,34 @@ class PdfService
 
         $cols = [22, 58, 14, 26, 24, 24, 26, 28];
         //        [0]  [1]   [2]  [3]      [4] [5] [6]     [7]
-        // Right edges:
-        // col3 right = re - 28 - 24 - 24 - 26 = re - 102
-        // col4 right = re - 28 - 24 - 24     = re - 76
-        // col5 right = re - 28 - 24          = re - 52
-        // col6 right = re - 28               = re - 28
-        // col7 right = re                   = re
 
         $h  = 8;
         $rh = 6.5;
 
-        $this->rect($l, $y, $w, $h, self::C_DARK);
+        $this->rect($l, $this->y, $w, $h, self::C_DARK);
         $this->f(self::FONT_B, 7.5, self::C_WHITE);
 
-        $this->cellL($l + 2, $y + 1.5, $cols[0], $h, 'SKU');
-        $this->cellL($l + 2 + $cols[0], $y + 1.5, $cols[1], $h, 'Tên Sản Phẩm');
-        $this->cellL($l + $cols[0] + $cols[1] + 2, $y + 1.5, $cols[2], $h, 'ĐVT');
-        $this->cellL($l + $cols[0] + $cols[1] + $cols[2] + 2, $y + 1.5, $cols[3], $h, 'Đầu Kỳ');
-        $this->cellL($l + $cols[0] + $cols[1] + $cols[2] + $cols[3] + 2, $y + 1.5, $cols[4], $h, 'Nhập');
-        $this->cellL($l + $cols[0] + $cols[1] + $cols[2] + $cols[3] + $cols[4] + 2, $y + 1.5, $cols[5], $h, 'Xuất');
-        $this->cellL($l + $cols[0] + $cols[1] + $cols[2] + $cols[3] + $cols[4] + $cols[5] + 2, $y + 1.5, $cols[6], $h, 'Cuối Kỳ');
-        $this->cellL($re - $cols[7], $y + 1.5, $cols[7], $h, 'Giá TB');
+        $this->cellL($l + 2, $this->y + 1.5, $cols[0], $h, 'SKU');
+        $this->cellL($l + 2 + $cols[0], $this->y + 1.5, $cols[1], $h, 'Tên Sản Phẩm');
+        $this->cellL($l + $cols[0] + $cols[1] + 2, $this->y + 1.5, $cols[2], $h, 'ĐVT');
+        $this->cellL($l + $cols[0] + $cols[1] + $cols[2] + 2, $this->y + 1.5, $cols[3], $h, 'Đầu Kỳ');
+        $this->cellL($l + $cols[0] + $cols[1] + $cols[2] + $cols[3] + 2, $this->y + 1.5, $cols[4], $h, 'Nhập');
+        $this->cellL($l + $cols[0] + $cols[1] + $cols[2] + $cols[3] + $cols[4] + 2, $this->y + 1.5, $cols[5], $h, 'Xuất');
+        $this->cellL($l + $cols[0] + $cols[1] + $cols[2] + $cols[3] + $cols[4] + $cols[5] + 2, $this->y + 1.5, $cols[6], $h, 'Cuối Kỳ');
+        $this->cellL($re - $cols[7], $this->y + 1.5, $cols[7], $h, 'Giá TB');
 
-        $y += $h;
+        $this->y += $h;
         $this->f(self::FONT, 7.5, self::C_DARK);
         $this->bd(self::C_LINER);
         $this->pdf->SetLineWidth(0.1);
 
         foreach ($rows as $i => $r) {
-            if ($i % 2 === 1) $this->rect($l, $y, $w, $rh, self::C_ALT);
-            $this->line($l, $y + $rh, $re, $y + $rh, self::C_LINER, 0.1);
+            $this->ensurePage($rh);
 
-            $ty = $y + 1.2;
+            if ($i % 2 === 1) $this->rect($l, $this->y, $w, $rh, self::C_ALT);
+            $this->line($l, $this->y + $rh, $re, $this->y + $rh, self::C_LINER, 0.1);
+
+            $ty = $this->y + 1.2;
 
             $this->cellL($l + 2, $ty, $cols[0], $rh, substr((string) ($r['sku'] ?? '—'), 0, 12));
             $this->cellL($l + 2 + $cols[0], $ty, $cols[1], $rh, substr((string) ($r['name'] ?? '—'), 0, 36));
@@ -388,10 +451,10 @@ class PdfService
             $this->cellL($re - $cols[7], $ty, $cols[7], $rh, $this->m((float) ($r['avg_cost'] ?? 0)));
             $this->f(self::FONT, 7.5, self::C_MID);
 
-            $y += $rh;
+            $this->y += $rh;
         }
 
-        return $y;
+        return $this->y;
     }
 
     // ─── Profit by product table ────────────────────────────────────────
@@ -404,38 +467,33 @@ class PdfService
 
         $cols = [22, 56, 14, 24, 36, 34, 30, 16];
         //        [0]  [1]   [2]  [3]      [4]      [5]  [6]    [7]
-        // Right edges:
-        // col3 right = re - 16 - 30 - 34 - 36 - 24 = re - 140
-        // col4 right = re - 16 - 30 - 34 - 36      = re - 116
-        // col5 right = re - 16 - 30 - 34           = re - 80
-        // col6 right = re - 16 - 30                = re - 46
-        // col7 right = re - 16                     = re - 16
-        // col8 right = re                          = re
 
         $h  = 8;
         $rh = 6.5;
 
-        $this->rect($l, $y, $w, $h, self::C_DARK);
+        $this->rect($l, $this->y, $w, $h, self::C_DARK);
         $this->f(self::FONT_B, 7.5, self::C_WHITE);
 
-        $this->cellL($l + 2, $y + 1.5, $cols[0], $h, 'SKU');
-        $this->cellL($l + 2 + $cols[0], $y + 1.5, $cols[1], $h, 'Tên Sản Phẩm');
-        $this->cellL($l + $cols[0] + $cols[1] + 2, $y + 1.5, $cols[2], $h, 'ĐVT');
-        $this->cellL($l + $cols[0] + $cols[1] + $cols[2] + 2, $y + 1.5, $cols[3], $h, 'SL Bán');
-        $this->cellL($l + $cols[0] + $cols[1] + $cols[2] + $cols[3] + 2, $y + 1.5, $cols[4], $h, 'Doanh Thu');
-        $this->cellL($l + $cols[0] + $cols[1] + $cols[2] + $cols[3] + $cols[4] + 2, $y + 1.5, $cols[5], $h, 'Giá Vốn');
-        $this->cellL($l + $cols[0] + $cols[1] + $cols[2] + $cols[3] + $cols[4] + $cols[5] + 2, $y + 1.5, $cols[6], $h, 'Lợi Nhuận');
-        $this->cellL($re - $cols[7], $y + 1.5, $cols[7], $h, 'Tỷ Suất');
+        $this->cellL($l + 2, $this->y + 1.5, $cols[0], $h, 'SKU');
+        $this->cellL($l + 2 + $cols[0], $this->y + 1.5, $cols[1], $h, 'Tên Sản Phẩm');
+        $this->cellL($l + $cols[0] + $cols[1] + 2, $this->y + 1.5, $cols[2], $h, 'ĐVT');
+        $this->cellL($l + $cols[0] + $cols[1] + $cols[2] + 2, $this->y + 1.5, $cols[3], $h, 'SL Bán');
+        $this->cellL($l + $cols[0] + $cols[1] + $cols[2] + $cols[3] + 2, $this->y + 1.5, $cols[4], $h, 'Doanh Thu');
+        $this->cellL($l + $cols[0] + $cols[1] + $cols[2] + $cols[3] + $cols[4] + 2, $this->y + 1.5, $cols[5], $h, 'Giá Vốn');
+        $this->cellL($l + $cols[0] + $cols[1] + $cols[2] + $cols[3] + $cols[4] + $cols[5] + 2, $this->y + 1.5, $cols[6], $h, 'Lợi Nhuận');
+        $this->cellL($re - $cols[7], $this->y + 1.5, $cols[7], $h, 'Tỷ Suất');
 
-        $y += $h;
+        $this->y += $h;
         $this->f(self::FONT, 7.5, self::C_DARK);
         $this->bd(self::C_LINER);
         $this->pdf->SetLineWidth(0.1);
 
         $totalRev = $totalProf = 0.0;
         foreach ($rows as $i => $r) {
-            if ($i % 2 === 1) $this->rect($l, $y, $w, $rh, self::C_ALT);
-            $this->line($l, $y + $rh, $re, $y + $rh, self::C_LINER, 0.1);
+            $this->ensurePage($rh);
+
+            if ($i % 2 === 1) $this->rect($l, $this->y, $w, $rh, self::C_ALT);
+            $this->line($l, $this->y + $rh, $re, $this->y + $rh, self::C_LINER, 0.1);
 
             $profit = (float) ($r['total_profit'] ?? 0);
             $rev    = (float) ($r['total_revenue'] ?? 0);
@@ -443,7 +501,7 @@ class PdfService
             $totalRev  += $rev;
             $totalProf += $profit;
 
-            $ty = $y + 1.2;
+            $ty = $this->y + 1.2;
 
             $this->cellL($l + 2, $ty, $cols[0], $rh, substr((string) ($r['sku'] ?? '—'), 0, 12));
             $this->cellL($l + 2 + $cols[0], $ty, $cols[1], $rh, substr((string) ($r['name'] ?? '—'), 0, 34));
@@ -456,34 +514,35 @@ class PdfService
             $this->cellL($re - $cols[7], $ty, $cols[7], $rh, number_format($margin, 1) . '%');
             $this->f(self::FONT, 7.5, self::C_DARK);
 
-            $y += $rh;
+            $this->y += $rh;
         }
 
         $totalMargin = $totalRev > 0 ? ($totalProf / $totalRev * 100) : 0;
-        $y += 3;
+        $this->ensurePage($sh + 3);
+        $this->y += 3;
 
         $sh = 14;
         $sw = $w / 3;
         $lh = 4;
         $vh = 5;
-        $this->rect($l, $y, $w, $sh, self::C_DARK);
+        $this->rect($l, $this->y, $w, $sh, self::C_DARK);
 
         $this->f(self::FONT, 7, self::C_LIGHT);
-        $this->cellL($l + 4, $y + 2, $sw, $lh, 'Tổng Doanh Thu');
+        $this->cellL($l + 4, $this->y + 2, $sw, $lh, 'Tổng Doanh Thu');
         $this->f(self::FONT_B, 11, self::C_WHITE);
-        $this->cellL($l + 4, $y + 6, $sw, $vh, $this->m($totalRev) . ' ' . $this->currency);
+        $this->cellL($l + 4, $this->y + 6, $sw, $vh, $this->m($totalRev) . ' ' . $this->currency);
 
         $this->f(self::FONT, 7, self::C_LIGHT);
-        $this->cellL($l + $sw + 4, $y + 2, $sw, $lh, 'Tổng Lợi Nhuận');
+        $this->cellL($l + $sw + 4, $this->y + 2, $sw, $lh, 'Tổng Lợi Nhuận');
         $this->f(self::FONT_B, 11, self::C_WHITE);
-        $this->cellL($l + $sw + 4, $y + 6, $sw, $vh, $this->m($totalProf) . ' ' . $this->currency);
+        $this->cellL($l + $sw + 4, $this->y + 6, $sw, $vh, $this->m($totalProf) . ' ' . $this->currency);
 
         $this->f(self::FONT, 7, self::C_LIGHT);
-        $this->cellL($l + $sw * 2 + 4, $y + 2, $sw, $lh, 'Biên LN TB');
+        $this->cellL($l + $sw * 2 + 4, $this->y + 2, $sw, $lh, 'Biên LN TB');
         $this->f(self::FONT_B, 11, self::C_WHITE);
-        $this->cellL($l + $sw * 2 + 4, $y + 6, $sw, $vh, number_format($totalMargin, 1) . '%');
+        $this->cellL($l + $sw * 2 + 4, $this->y + 6, $sw, $vh, number_format($totalMargin, 1) . '%');
 
-        return $y + $sh;
+        return $this->y + $sh;
     }
 
     // ─── Profit by channel table ─────────────────────────────────────────
@@ -496,28 +555,21 @@ class PdfService
 
         $cols = [70, 30, 42, 38, 34, 18];
         //        [0]  [1]   [2]     [3]   [4]    [5]
-        // Right edges:
-        // col1 right = re - 18 - 34 - 38 - 42 - 30 = re - 162
-        // col2 right = re - 18 - 34 - 38 - 42       = re - 132
-        // col3 right = re - 18 - 34 - 38            = re - 90
-        // col4 right = re - 18 - 34               = re - 52
-        // col5 right = re - 18                    = re - 18
-        // col6 right = re                          = re
 
         $h  = 9;
         $rh = 9;
 
-        $this->rect($l, $y, $w, $h, self::C_DARK);
+        $this->rect($l, $this->y, $w, $h, self::C_DARK);
         $this->f(self::FONT_B, 8.5, self::C_WHITE);
 
-        $this->cellL($l + 4, $y + 1.5, $cols[0], $h, 'Kênh Bán');
-        $this->cellL($l + $cols[0] + 4, $y + 1.5, $cols[1], $h, 'Đơn Hàng');
-        $this->cellL($l + $cols[0] + $cols[1] + 4, $y + 1.5, $cols[2], $h, 'Doanh Thu');
-        $this->cellL($l + $cols[0] + $cols[1] + $cols[2] + 4, $y + 1.5, $cols[3], $h, 'Giá Vốn');
-        $this->cellL($l + $cols[0] + $cols[1] + $cols[2] + $cols[3] + 4, $y + 1.5, $cols[4], $h, 'Lợi Nhuận');
-        $this->cellL($re - $cols[5], $y + 1.5, $cols[5], $h, 'Tỷ Suất');
+        $this->cellL($l + 4, $this->y + 1.5, $cols[0], $h, 'Kênh Bán');
+        $this->cellL($l + $cols[0] + 4, $this->y + 1.5, $cols[1], $h, 'Đơn Hàng');
+        $this->cellL($l + $cols[0] + $cols[1] + 4, $this->y + 1.5, $cols[2], $h, 'Doanh Thu');
+        $this->cellL($l + $cols[0] + $cols[1] + $cols[2] + 4, $this->y + 1.5, $cols[3], $h, 'Giá Vốn');
+        $this->cellL($l + $cols[0] + $cols[1] + $cols[2] + $cols[3] + 4, $this->y + 1.5, $cols[4], $h, 'Lợi Nhuận');
+        $this->cellL($re - $cols[5], $this->y + 1.5, $cols[5], $h, 'Tỷ Suất');
 
-        $y += $h;
+        $this->y += $h;
         $this->f(self::FONT, 8.5, self::C_DARK);
         $this->bd(self::C_LINER);
         $this->pdf->SetLineWidth(0.1);
@@ -534,8 +586,10 @@ class PdfService
         ];
 
         foreach ($rows as $i => $r) {
-            if ($i % 2 === 1) $this->rect($l, $y, $w, $rh, self::C_ALT);
-            $this->line($l, $y + $rh, $re, $y + $rh, self::C_LINER, 0.1);
+            $this->ensurePage($rh);
+
+            if ($i % 2 === 1) $this->rect($l, $this->y, $w, $rh, self::C_ALT);
+            $this->line($l, $this->y + $rh, $re, $this->y + $rh, self::C_LINER, 0.1);
 
             $ch     = $r['channel'] ?? '';
             $profit = (float) ($r['profit'] ?? 0);
@@ -546,45 +600,46 @@ class PdfService
             $totalProf += $profit;
             $totalOrders += $orders;
 
-            $ty = $y + 2.8;
+            $ty = $this->y + 2.8;
 
             $this->cellL($l + 4, $ty, $cols[0], $rh, $labels[$ch] ?? ($ch ?: '—'));
             $this->cellL($l + $cols[0] + 4, $ty, $cols[1], $rh, number_format($orders));
-$this->cellL($l + $cols[0] + $cols[1] + 4, $ty, $cols[2], $rh, $this->m($rev));
+            $this->cellL($l + $cols[0] + $cols[1] + 4, $ty, $cols[2], $rh, $this->m($rev));
             $this->cellL($l + $cols[0] + $cols[1] + $cols[2] + 4, $ty, $cols[3], $rh, $this->m((float) ($r['cogs'] ?? 0)));
             $this->f(self::FONT_B, 8.5, self::C_BLACK);
             $this->cellL($l + $cols[0] + $cols[1] + $cols[2] + $cols[3] + 4, $ty, $cols[4], $rh, $this->m($profit));
             $this->cellL($re - $cols[5], $ty, $cols[5], $rh, number_format($margin, 1) . '%');
             $this->f(self::FONT, 8.5, self::C_DARK);
 
-            $y += $rh;
+            $this->y += $rh;
         }
 
         $totalMargin = $totalRev > 0 ? ($totalProf / $totalRev * 100) : 0;
-        $y += 3;
+        $this->ensurePage($sh + 3);
+        $this->y += 3;
 
         $sh = 14;
         $sw = $w / 3;
         $lh = 4;
         $vh = 5;
-        $this->rect($l, $y, $w, $sh, self::C_DARK);
+        $this->rect($l, $this->y, $w, $sh, self::C_DARK);
 
         $this->f(self::FONT, 7, self::C_LIGHT);
-        $this->cellL($l + 4, $y + 2, $sw, $lh, 'Tổng Doanh Thu');
+        $this->cellL($l + 4, $this->y + 2, $sw, $lh, 'Tổng Doanh Thu');
         $this->f(self::FONT_B, 11, self::C_WHITE);
-        $this->cellL($l + 4, $y + 6, $sw, $vh, $this->m($totalRev) . ' ' . $this->currency);
+        $this->cellL($l + 4, $this->y + 6, $sw, $vh, $this->m($totalRev) . ' ' . $this->currency);
 
         $this->f(self::FONT, 7, self::C_LIGHT);
-        $this->cellL($l + $sw + 4, $y + 2, $sw, $lh, 'Tổng Lợi Nhuận');
+        $this->cellL($l + $sw + 4, $this->y + 2, $sw, $lh, 'Tổng Lợi Nhuận');
         $this->f(self::FONT_B, 11, self::C_WHITE);
-        $this->cellL($l + $sw + 4, $y + 6, $sw, $vh, $this->m($totalProf) . ' ' . $this->currency);
+        $this->cellL($l + $sw + 4, $this->y + 6, $sw, $vh, $this->m($totalProf) . ' ' . $this->currency);
 
         $this->f(self::FONT, 7, self::C_LIGHT);
-        $this->cellL($l + $sw * 2 + 4, $y + 2, $sw, $lh, 'Biên LN TB');
+        $this->cellL($l + $sw * 2 + 4, $this->y + 2, $sw, $lh, 'Biên LN TB');
         $this->f(self::FONT_B, 11, self::C_WHITE);
-        $this->cellL($l + $sw * 2 + 4, $y + 6, $sw, $vh, number_format($totalMargin, 1) . '%');
+        $this->cellL($l + $sw * 2 + 4, $this->y + 6, $sw, $vh, number_format($totalMargin, 1) . '%');
 
-        return $y + $sh;
+        return $this->y + $sh;
     }
 
     // ─── Product Performance table ─────────────────────────────────────────────
@@ -595,30 +650,28 @@ $this->cellL($l + $cols[0] + $cols[1] + 4, $ty, $cols[2], $rh, $this->m($rev));
         $w  = $this->pw;
         $re = $l + $w;
 
-        // Column widths, sum = $w (277mm for landscape A4 with 15mm margins each side)
-        // [SP/Name] [Unit] [SL Bán] [Doanh Thu] [Lợi Nhuận] [Margin%] [Vòng Quay] [Trả Hàng] [Score]
         $cols = [64, 12, 20, 38, 34, 18, 22, 22, 20];
-        // col sums: 64,76,96,134,168,186,208,230,250... +2 pad = 252 < 277 ✓
+        //        [0] [1]  [2]  [3]     [4]   [5]    [6]    [7]    [8]
 
         $h  = 8;
         $rh = 6.5;
 
         // ── Header row
-        $this->rect($l, $y, $w, $h, self::C_DARK);
+        $this->rect($l, $this->y, $w, $h, self::C_DARK);
         $this->f(self::FONT_B, 7, self::C_WHITE);
 
         $cx = $l + 2;
-        $this->cellL($cx, $y + 1.5, $cols[0], $h, 'Tên Sản Phẩm');       $cx += $cols[0];
-        $this->cellL($cx, $y + 1.5, $cols[1], $h, 'ĐVT');                  $cx += $cols[1];
-        $this->cellL($cx, $y + 1.5, $cols[2], $h, 'SL Bán');               $cx += $cols[2];
-        $this->cellL($cx, $y + 1.5, $cols[3], $h, 'Doanh Thu');              $cx += $cols[3];
-        $this->cellL($cx, $y + 1.5, $cols[4], $h, 'Lợi Nhuận');            $cx += $cols[4];
-        $this->cellL($cx, $y + 1.5, $cols[5], $h, 'Margin %');               $cx += $cols[5];
-        $this->cellL($cx, $y + 1.5, $cols[6], $h, 'Vòng Quay');             $cx += $cols[6];
-        $this->cellL($cx, $y + 1.5, $cols[7], $h, 'Trả Hàng %');           $cx += $cols[7];
-        $this->cellL($cx, $y + 1.5, $cols[8], $h, 'Score');
+        $this->cellL($cx, $this->y + 1.5, $cols[0], $h, 'Tên Sản Phẩm');      $cx += $cols[0];
+        $this->cellL($cx, $this->y + 1.5, $cols[1], $h, 'ĐVT');                 $cx += $cols[1];
+        $this->cellL($cx, $this->y + 1.5, $cols[2], $h, 'SL Bán');            $cx += $cols[2];
+        $this->cellL($cx, $this->y + 1.5, $cols[3], $h, 'Doanh Thu');           $cx += $cols[3];
+        $this->cellL($cx, $this->y + 1.5, $cols[4], $h, 'Lợi Nhuận');         $cx += $cols[4];
+        $this->cellL($cx, $this->y + 1.5, $cols[5], $h, 'Margin %');            $cx += $cols[5];
+        $this->cellL($cx, $this->y + 1.5, $cols[6], $h, 'Vòng Quay');          $cx += $cols[6];
+        $this->cellL($cx, $this->y + 1.5, $cols[7], $h, 'Trả Hàng %');        $cx += $cols[7];
+        $this->cellL($cx, $this->y + 1.5, $cols[8], $h, 'Score');
 
-        $y += $h;
+        $this->y += $h;
         $this->f(self::FONT, 7, self::C_DARK);
         $this->bd(self::C_LINER);
         $this->pdf->SetLineWidth(0.1);
@@ -627,13 +680,14 @@ $this->cellL($l + $cols[0] + $cols[1] + 4, $ty, $cols[2], $rh, $this->m($rev));
         $totalProf = 0.0;
 
         foreach ($rows as $i => $r) {
-            // Skip products with no sales
             if ((float)($r['net_qty_sold'] ?? 0) <= 0 && (float)($r['net_revenue'] ?? 0) <= 0) {
                 continue;
             }
 
-            if ($i % 2 === 1) $this->rect($l, $y, $w, $rh, self::C_ALT);
-            $this->line($l, $y + $rh, $re, $y + $rh, self::C_LINER, 0.1);
+            $this->ensurePage($rh);
+
+            if ($i % 2 === 1) $this->rect($l, $this->y, $w, $rh, self::C_ALT);
+            $this->line($l, $this->y + $rh, $re, $this->y + $rh, self::C_LINER, 0.1);
 
             $rev    = (float)($r['net_revenue'] ?? 0);
             $profit = (float)($r['net_profit']  ?? 0);
@@ -642,67 +696,64 @@ $this->cellL($l + $cols[0] + $cols[1] + 4, $ty, $cols[2], $rh, $this->m($rev));
             $totalRev  += $rev;
             $totalProf += $profit;
 
-            $ty = $y + 1.2;
+            $ty = $this->y + 1.2;
             $cx = $l + 2;
 
-            // Product name (truncated to 38 chars) + SKU hint
             $nameStr = substr((string)($r['name'] ?? '—'), 0, 38);
             if (!empty($r['sku'])) $nameStr .= ' (' . substr((string)$r['sku'], 0, 10) . ')';
-            $this->cellL($cx, $ty, $cols[0], $rh, substr($nameStr, 0, 46));  $cx += $cols[0];
+            $this->cellL($cx, $ty, $cols[0], $rh, substr($nameStr, 0, 46)); $cx += $cols[0];
             $this->cellL($cx, $ty, $cols[1], $rh, (string)($r['unit'] ?? '')); $cx += $cols[1];
             $this->cellL($cx, $ty, $cols[2], $rh, $this->n($r['net_qty_sold'] ?? 0)); $cx += $cols[2];
-            $this->cellL($cx, $ty, $cols[3], $rh, $this->m($rev));            $cx += $cols[3];
+            $this->cellL($cx, $ty, $cols[3], $rh, $this->m($rev)); $cx += $cols[3];
 
-            // Profit — bold black
             $this->f(self::FONT_B, 7, self::C_BLACK);
-            $this->cellL($cx, $ty, $cols[4], $rh, $this->m($profit));         $cx += $cols[4];
+            $this->cellL($cx, $ty, $cols[4], $rh, $this->m($profit)); $cx += $cols[4];
             $this->f(self::FONT, 7, self::C_DARK);
 
             $this->cellL($cx, $ty, $cols[5], $rh, number_format($margin, 1) . '%'); $cx += $cols[5];
             $this->cellL($cx, $ty, $cols[6], $rh, $this->n((float)($r['turnover'] ?? 0), 2) . 'x'); $cx += $cols[6];
             $this->cellL($cx, $ty, $cols[7], $rh, number_format((float)($r['return_rate_pct'] ?? 0), 1) . '%'); $cx += $cols[7];
 
-            // Score — bold, with recommendation hint
             $rec = $r['recommendation'] ?? '';
             $recLabel = [
-                'increase' => '↑',   // up arrow = tăng vốn
-                'maintain' => '•',   // bullet  = duy trì
-                'review'   => '↓',   // down arrow = xem xét
+                'increase' => '↑',
+                'maintain' => '•',
+                'review'   => '↓',
                 'no_sales' => '—',
             ][$rec] ?? '';
             $this->f(self::FONT_B, 7, self::C_BLACK);
             $this->cellL($cx, $ty, $cols[8], $rh, number_format($score, 1) . ' ' . $recLabel);
             $this->f(self::FONT, 7, self::C_DARK);
 
-            $y += $rh;
+            $this->y += $rh;
         }
 
-        // ── Summary bar (same pattern as tblProfitProduct)
         $totalMargin = $totalRev > 0 ? ($totalProf / $totalRev * 100) : 0.0;
-        $y += 3;
+        $this->ensurePage($sh + 3);
+        $this->y += 3;
 
         $sh = 14;
         $sw = $w / 3;
         $lh = 4;
         $vh = 5;
-        $this->rect($l, $y, $w, $sh, self::C_DARK);
+        $this->rect($l, $this->y, $w, $sh, self::C_DARK);
 
         $this->f(self::FONT, 7, self::C_LIGHT);
-        $this->cellL($l + 4,        $y + 2, $sw, $lh, 'Tổng Doanh Thu');
+        $this->cellL($l + 4,        $this->y + 2, $sw, $lh, 'Tổng Doanh Thu');
         $this->f(self::FONT_B, 11, self::C_WHITE);
-        $this->cellL($l + 4,        $y + 6, $sw, $vh, $this->m($totalRev) . ' ' . $this->currency);
+        $this->cellL($l + 4,        $this->y + 6, $sw, $vh, $this->m($totalRev) . ' ' . $this->currency);
 
         $this->f(self::FONT, 7, self::C_LIGHT);
-        $this->cellL($l + $sw + 4,  $y + 2, $sw, $lh, 'Tổng Lợi Nhuận');
+        $this->cellL($l + $sw + 4,  $this->y + 2, $sw, $lh, 'Tổng Lợi Nhuận');
         $this->f(self::FONT_B, 11, self::C_WHITE);
-        $this->cellL($l + $sw + 4,  $y + 6, $sw, $vh, $this->m($totalProf) . ' ' . $this->currency);
+        $this->cellL($l + $sw + 4,  $this->y + 6, $sw, $vh, $this->m($totalProf) . ' ' . $this->currency);
 
         $this->f(self::FONT, 7, self::C_LIGHT);
-        $this->cellL($l + $sw*2 + 4, $y + 2, $sw, $lh, 'Biên LN Trung Bình');
+        $this->cellL($l + $sw*2 + 4, $this->y + 2, $sw, $lh, 'Biên LN Trung Bình');
         $this->f(self::FONT_B, 11, self::C_WHITE);
-        $this->cellL($l + $sw*2 + 4, $y + 6, $sw, $vh, number_format($totalMargin, 1) . '%');
+        $this->cellL($l + $sw*2 + 4, $this->y + 6, $sw, $vh, number_format($totalMargin, 1) . '%');
 
-        return $y + $sh;
+        return $this->y + $sh;
     }
 
     // ─── Signature block ──────────────────────────────────────────────────

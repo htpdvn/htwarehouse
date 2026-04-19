@@ -119,7 +119,7 @@ $products = $wpdb->get_results("SELECT id, name, sku, unit, avg_cost, current_st
                 <span x-text="form.id ? 'Sửa đơn: ' + form.order_code : 'Tạo đơn bán mới'"></span>
             </div>
 
-            <div class="htw-form-grid" style="margin-bottom:20px;">
+            <div class="htw-form-grid htw-export-info-grid">
                 <div class="htw-field">
                     <label class="htw-label">Mã đơn (tự sinh nếu để trống)</label>
                     <input class="htw-input" x-model="form.order_code" placeholder="VD: ORD-2024-001">
@@ -147,7 +147,7 @@ $products = $wpdb->get_results("SELECT id, name, sku, unit, avg_cost, current_st
             <div style="font-weight:600;margin-bottom:8px;">Sản phẩm bán</div>
             <div class="htw-items-table-wrap">
                 <table class="htw-table htw-items-table">
-                    <thead>
+                    <thead class="htw-items-thead">
                         <tr>
                             <th style="width:30%;">Sản phẩm</th>
                             <th>Tồn kho</th>
@@ -161,16 +161,16 @@ $products = $wpdb->get_results("SELECT id, name, sku, unit, avg_cost, current_st
                     </thead>
                     <tbody>
                         <template x-for="(item, idx) in form.items" :key="idx">
-                            <tr :style="item.product_id && parseNum(item.qty) > parseFloat(item.current_stock || 0) ? 'background:#fff5f5;' : ''">
-                                <td>
+                            <tr class="htw-item-row" :style="item.product_id && parseNum(item.qty) > parseFloat(item.current_stock || 0) ? 'background:#fff5f5;' : ''">
+                                <td data-label="Sản phẩm">
                                     <select class="htw-select" x-model="item.product_id" @change="onProductChange(item)" x-html="productOptions(item.product_id)">
                                     </select>
                                 </td>
-                                <td style="text-align:right;">
+                                <td data-label="Tồn kho" style="text-align:right;">
                                     <span x-show="item.product_id" :style="parseNum(item.qty) > parseFloat(item.current_stock||0) ? 'color:#ef4444;font-weight:700;' : 'color:#22c55e;'" x-text="fmtNum(item.current_stock || 0)"></span>
                                     <span x-show="!item.product_id" style="color:var(--htw-text-muted);">—</span>
                                 </td>
-                                <td>
+                                <td data-label="Số lượng">
                                     <input class="htw-input" type="text"
                                         x-model="item.qty"
                                         @blur="item.qty = parseNum(String(item.qty || '')); $event.target.value = fmtNum(item.qty)"
@@ -178,15 +178,15 @@ $products = $wpdb->get_results("SELECT id, name, sku, unit, avg_cost, current_st
                                         placeholder="0">
                                     <div x-show="item.product_id && parseNum(String(item.qty||'')) > parseFloat(item.current_stock||0)" style="color:#ef4444;font-size:.75rem;white-space:nowrap;">⚠ Vượt tồn kho!</div>
                                 </td>
-                                <td><input class="htw-input" type="text"
+                                <td data-label="Giá bán"><input class="htw-input" type="text"
                                         x-model="item.sale_price"
                                         @blur="var el = $event.target; el.value = fmtNum(parseFloat(item.sale_price) || 0)"
                                         placeholder="0" style="text-align:right;"></td>
-                                <td style="color:var(--htw-text-muted);font-size:.8rem;" x-text="fmt(item.avg_cost)"></td>
-                                <td x-text="fmt(item.qty * item.sale_price)"></td>
-                                <td :style="{color: (item.qty*(item.sale_price-item.avg_cost))>=0 ? '#22c55e':'#ef4444'}"
+                                <td data-label="Giá vốn" style="color:var(--htw-text-muted);font-size:.8rem;" x-text="fmt(item.avg_cost)"></td>
+                                <td data-label="Doanh thu" x-text="fmt(item.qty * item.sale_price)"></td>
+                                <td data-label="Lợi nhuận" :style="{color: (item.qty*(item.sale_price-item.avg_cost))>=0 ? '#22c55e':'#ef4444'}"
                                     x-text="fmt(item.qty * (item.sale_price - item.avg_cost))"></td>
-                                <td><button type="button" class="htw-btn htw-btn-danger htw-btn-sm" @click="removeItem(idx)">✕</button></td>
+                                <td data-label=" " class="htw-item-del-cell"><button type="button" class="htw-btn htw-btn-danger htw-btn-sm" @click="removeItem(idx)">✕ Xoá</button></td>
                             </tr>
                         </template>
                     </tbody>
@@ -239,7 +239,7 @@ $products = $wpdb->get_results("SELECT id, name, sku, unit, avg_cost, current_st
                     </div>
 
                     <!-- Financial summary -->
-                    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px;">
+                    <div class="htw-export-summary-grid">
                         <div style="background:#f8f9fa;border:1px solid #e2e8f0;border-radius:8px;padding:12px;text-align:center;">
                             <div style="color:var(--htw-text-muted);font-size:.75rem;margin-bottom:4px;">DOANH THU</div>
                             <div style="font-weight:700;color:var(--htw-primary);font-size:1.1rem;" x-text="fmt(detailOrder.total_revenue)"></div>
@@ -379,7 +379,7 @@ $products = $wpdb->get_results("SELECT id, name, sku, unit, avg_cost, current_st
             </div>
 
             <!-- Return info -->
-            <div class="htw-form-grid" style="margin-bottom:20px;">
+            <div class="htw-form-grid htw-return-info-grid">
                 <div class="htw-field">
                     <label class="htw-label">Ngày trả hàng</label>
                     <input class="htw-input" type="date" x-model="returnForm.return_date">

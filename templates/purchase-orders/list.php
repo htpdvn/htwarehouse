@@ -293,7 +293,7 @@ window._htwSuppliersList = <?php echo wp_json_encode($suppliers); ?>;
 
             <!-- Supplier info -->
             <div style="font-weight:600;margin-bottom:10px;color:var(--htw-text);">Thông tin nhà cung cấp</div>
-            <div class="htw-form-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:16px;">
+            <div class="htw-form-grid htw-supplier-grid">
                 <div class="htw-field">
                     <label class="htw-label">Mã đơn (tự sinh nếu để trống)</label>
                     <input class="htw-input" x-model="form.po_code" placeholder="VD: PO-ABC123">
@@ -326,7 +326,7 @@ window._htwSuppliersList = <?php echo wp_json_encode($suppliers); ?>;
             <div style="font-weight:600;margin-bottom:8px;color:var(--htw-text);">Danh sách hàng hoá</div>
             <div class="htw-items-table-wrap">
                 <table class="htw-table htw-items-table" style="width:100%;">
-                    <thead>
+                    <thead class="htw-items-thead">
                         <tr>
                             <th style="width:40%;">Sản phẩm</th>
                             <th>Số lượng</th>
@@ -337,32 +337,32 @@ window._htwSuppliersList = <?php echo wp_json_encode($suppliers); ?>;
                     </thead>
                     <tbody>
                         <template x-for="(item, idx) in form.items" :key="idx">
-                            <tr>
-                                <td>
+                            <tr class="htw-item-row">
+                                <td data-label="Sản phẩm">
                                     <select class="htw-select" x-model="item.product_id" x-html="'<option value=\'\'>-- Chọn sản phẩm --</option>' + products.map(function(p){return '<option value=\''+p.id+'\''+(item.product_id==p.id?' selected':'')+'>'+p.name+(p.sku?' ['+p.sku+']':'')+'</option>';}).join('')">
                                     </select>
                                 </td>
-                                <td><input class="htw-input" type="text"
+                                <td data-label="Số lượng"><input class="htw-input" type="text"
                                            :value="fmtNum(item.qty)"
                                            @input="item.qty = parseNum($event.target.value)"
                                            @blur="$event.target.value = fmtNum(item.qty)"
                                            placeholder="0" style="text-align:right;"></td>
-                                <td><input class="htw-input" type="text"
+                                <td data-label="Đơn giá"><input class="htw-input" type="text"
                                            :value="fmtNum(item.unit_price)"
                                            @input="item.unit_price = parseNum($event.target.value)"
                                            @blur="$event.target.value = fmtNum(item.unit_price)"
                                            placeholder="0" style="text-align:right;"></td>
-                                <td style="text-align:right;font-weight:600;" x-text="fmt(item.qty * item.unit_price)"></td>
-                                <td><button type="button" class="htw-btn htw-btn-danger htw-btn-sm" @click="removeItem(idx)">✕</button></td>
+                                <td data-label="Thành tiền" style="font-weight:600;" x-text="fmt(item.qty * item.unit_price)"></td>
+                                <td data-label=" " class="htw-item-del-cell"><button type="button" class="htw-btn htw-btn-danger htw-btn-sm" @click="removeItem(idx)">✕ Xoá</button></td>
                             </tr>
                         </template>
                     </tbody>
                     <tfoot>
-                        <tr>
+                        <tr class="htw-items-footer-row">
                             <td colspan="3" style="padding:10px 12px;">
                                 <button type="button" class="htw-btn htw-btn-ghost htw-btn-sm" @click="addItem()">+ Thêm dòng</button>
                             </td>
-                            <td style="text-align:right;font-weight:700;color:var(--htw-text);" x-text="fmt(goodsTotal)"></td>
+                            <td class="htw-items-total-cell" style="text-align:right;font-weight:700;color:var(--htw-text);" x-text="fmt(goodsTotal)"></td>
                             <td></td>
                         </tr>
                     </tfoot>
@@ -371,7 +371,7 @@ window._htwSuppliersList = <?php echo wp_json_encode($suppliers); ?>;
 
             <!-- Extra fees -->
             <div style="font-weight:600;margin:20px 0 10px;color:var(--htw-text);">Chi phí đơn hàng</div>
-            <div class="htw-form-grid" style="grid-template-columns:repeat(6,1fr);">
+            <div class="htw-form-grid htw-fees-grid">
                 <div class="htw-field">
                     <label class="htw-label">Phí vận chuyển</label>
                     <input class="htw-input" type="text" style="text-align:right;"

@@ -10,14 +10,29 @@
     <!-- KPI Cards -->
     <div class="htw-kpi-grid">
         <div class="htw-kpi-card purple">
-            <div class="htw-kpi-label">Tổng tồn kho</div>
+            <div class="htw-kpi-label">Số SP tồn kho</div>
             <div class="htw-kpi-value" x-text="kpi.total_stock_qty !== undefined ? fmtNum(kpi.total_stock_qty, 0) : '—'"></div>
-            <div class="htw-kpi-sub">Tổng số lượng đang tồn</div>
+            <div class="htw-kpi-sub">Đơn vị SP đang lưu kho</div>
         </div>
         <div class="htw-kpi-card blue">
-            <div class="htw-kpi-label">Giá trị tồn kho</div>
+            <div class="htw-kpi-label">Giá trị hàng tồn kho</div>
             <div class="htw-kpi-value" x-text="kpi.inventory_value !== undefined ? fmt(kpi.inventory_value) : '—'"></div>
             <div class="htw-kpi-sub">Theo giá vốn bình quân</div>
+        </div>
+        <div class="htw-kpi-card orange">
+            <div class="htw-kpi-label">Hàng đặt chưa về</div>
+            <div class="htw-kpi-value" x-text="kpi.po_pending_value !== undefined ? fmt(kpi.po_pending_value) : '—'"></div>
+            <div class="htw-kpi-sub" x-text="(kpi.po_active ?? 0) + ' đơn đặt NCC có hàng chưa về'"></div>
+        </div>
+        <div class="htw-kpi-card red">
+            <div class="htw-kpi-label">Công nợ NCC</div>
+            <div class="htw-kpi-value" x-text="kpi.po_debt !== undefined ? fmt(kpi.po_debt) : '—'"></div>
+            <div class="htw-kpi-sub">Tổng nợ phải trả</div>
+        </div>
+        <div class="htw-kpi-card teal">
+            <div class="htw-kpi-label">Đã thanh toán NCC</div>
+            <div class="htw-kpi-value" x-text="kpi.po_paid_total !== undefined ? fmt(kpi.po_paid_total) : '—'"></div>
+            <div class="htw-kpi-sub">Tổng tiền đã trả nhà cung cấp</div>
         </div>
         <div class="htw-kpi-card green">
             <div class="htw-kpi-label">Doanh thu tháng này</div>
@@ -28,16 +43,6 @@
             <div class="htw-kpi-label">Lợi nhuận tháng này</div>
             <div class="htw-kpi-value" x-text="kpi.profit !== undefined ? fmt(kpi.profit) : '—'"></div>
             <div class="htw-kpi-sub" x-text="kpi.revenue > 0 ? 'Margin: ' + Math.round(kpi.profit/kpi.revenue*100) + '%' : ''"></div>
-        </div>
-        <div class="htw-kpi-card yellow">
-            <div class="htw-kpi-label">Đơn đặt hàng đang xử lý</div>
-            <div class="htw-kpi-value" x-text="kpi.po_active ?? '—'"></div>
-            <div class="htw-kpi-sub">Đơn PO đang mở</div>
-        </div>
-        <div class="htw-kpi-card red">
-            <div class="htw-kpi-label">Công nợ NCC</div>
-            <div class="htw-kpi-value" x-text="kpi.po_debt !== undefined ? fmt(kpi.po_debt) : '—'"></div>
-            <div class="htw-kpi-sub">Tổng nợ phải trả</div>
         </div>
     </div>
 
