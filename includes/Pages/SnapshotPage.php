@@ -112,8 +112,35 @@ class SnapshotPage
 
         wp_send_json_success([
             'is_scheduled' => SnapshotScheduler::get_instance()->is_scheduled(),
-            'next_run'      => $next_run ? date_i18n('d/m/Y H:i', $next_run) : null,
+            'next_run'     => $next_run ? date_i18n('d/m/Y H:i', $next_run) : null,
             'last_status'  => $status,
+        ]);
+    }
+
+    /**
+     * AJAX: Force-reschedule the cron (clear existing + re-register).
+     * Useful when the cron event was corrupted or never registered correctly.
+     */
+    public static function ajax_reschedule(): void
+    {
+        check_ajax_referer('htw_nonce', 'nonce');
+        if (! current_user_can('manage_options')) {
+            wp_send_json_error('Unauthorized', 403);
+        }
+
+        $scheduler = SnapshotScheduler::get_instance();
+
+        // Clear any stale event, then force a fresh registration.
+        $scheduler->clear_schedule();
+        $scheduler->schedule();
+
+        $next_run = $scheduler->next_run();
+        wp_send_json_success([
+            'is_scheduled' => $scheduler->is_scheduled(),
+            'next_run'     => $next_run ? date_i18n('d/m/Y H:i', $next_run) : null,
+            'message'      => $next_run
+                ? 'Đã đặt lịch thành công. Lần chạy tiếp: ' . date_i18n('d/m/Y H:i', $next_run)
+                : 'Không thể đặt lịch — vui lòng kiểm tra lại cấu hình WP-Cron.',
         ]);
     }
 

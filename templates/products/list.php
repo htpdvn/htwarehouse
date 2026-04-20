@@ -108,6 +108,14 @@ $products = $wpdb->get_results("SELECT * FROM {$wpdb->prefix}htw_products ORDER 
                         <span x-text="sortKey==='avg_cost' ? (sortDir==='asc' ? ' ↑' : ' ↓') : ' ↕'" style="font-size:.8em;opacity:.7;"></span>
                     </th>
                     <th
+                        @click="sortBy('suggested_price')"
+                        style="cursor:pointer;user-select:none;white-space:nowrap;"
+                        :style="sortKey==='suggested_price' ? 'color:var(--htw-info)' : ''"
+                    >
+                        Giá bán đề xuất
+                        <span x-text="sortKey==='suggested_price' ? (sortDir==='asc' ? ' ↑' : ' ↓') : ' ↕'" style="font-size:.8em;opacity:.7;"></span>
+                    </th>
+                    <th
                         @click="sortBy('inventory_value')"
                         style="cursor:pointer;user-select:none;white-space:nowrap;"
                         :style="sortKey==='inventory_value' ? 'color:var(--htw-info)' : ''"
@@ -143,6 +151,7 @@ $products = $wpdb->get_results("SELECT * FROM {$wpdb->prefix}htw_products ORDER 
                         <td x-text="p.unit"></td>
                         <td x-text="fmtNum(p.current_stock, 0)"></td>
                         <td x-text="fmt(p.avg_cost)"></td>
+                        <td style="color:var(--htw-warning,#f59e0b);" x-text="p.suggested_price > 0 ? fmt(p.suggested_price) : '—'"></td>
                         <td style="color:var(--htw-info);" x-text="fmt(parseFloat(p.current_stock) * parseFloat(p.avg_cost))"></td>
                         <td>
                             <div style="display:flex;gap:6px;">
@@ -154,7 +163,7 @@ $products = $wpdb->get_results("SELECT * FROM {$wpdb->prefix}htw_products ORDER 
                 </template>
                 <template x-if="!filtered().length">
                     <tr>
-                        <td colspan="9" style="text-align:center;color:var(--htw-text-muted);padding:32px;">Chưa có sản phẩm nào.</td>
+                        <td colspan="10" style="text-align:center;color:var(--htw-text-muted);padding:32px;">Chưa có sản phẩm nào.</td>
                     </tr>
                 </template>
             </tbody>
@@ -217,6 +226,13 @@ $products = $wpdb->get_results("SELECT * FROM {$wpdb->prefix}htw_products ORDER 
                 <div class="htw-field">
                     <label class="htw-label">Link sản phẩm</label>
                     <input class="htw-input" x-model="form.product_url" placeholder="https://…" type="url">
+                </div>
+                <div class="htw-field">
+                    <label class="htw-label">Giá bán đề xuất</label>
+                    <input class="htw-input" x-model="form.suggested_price" placeholder="0" type="number" min="0" step="1000">
+                    <small x-show="parseFloat(form.suggested_price) > 0"
+                           style="display:block;margin-top:4px;color:var(--htw-warning,#f59e0b);font-size:.8rem;"
+                           x-text="'≈ ' + fmt(form.suggested_price)"></small>
                 </div>
             </div>
 

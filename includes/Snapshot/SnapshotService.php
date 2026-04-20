@@ -107,8 +107,9 @@ class SnapshotService
 
     /**
      * Get the snapshot directory path.
+     * Public so external classes (e.g. SnapshotPage) can resolve the path for secure file serving.
      */
-    private static function get_snapshot_dir(): string
+    public static function get_snapshot_dir(): string
     {
         return self::ensure_snapshot_dir();
     }

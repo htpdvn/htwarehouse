@@ -36,6 +36,7 @@ class ProductsPage
         $barcode     = sanitize_text_field($_POST['barcode'] ?? '');
         $notes       = sanitize_textarea_field($_POST['notes'] ?? '');
         $product_url = esc_url_raw($_POST['product_url'] ?? '');
+        $suggested_price = (float) str_replace(',', '.', $_POST['suggested_price'] ?? 0);
 
         // Image: prefer uploaded attachment ID, fall back to URL
         $image_url = '';
@@ -52,7 +53,8 @@ class ProductsPage
         }
 
         $data = compact('sku', 'name', 'category', 'unit', 'barcode', 'image_url', 'notes', 'product_url');
-        $fmt  = ['%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s'];
+        $data['suggested_price'] = $suggested_price;
+        $fmt  = ['%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%f'];
 
         if ($id > 0) {
             // Check SKU uniqueness — exclude current product from check

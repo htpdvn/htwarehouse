@@ -117,7 +117,7 @@ class ReportsPage
     {
         global $wpdb;
         $rows = $wpdb->get_results(
-            "SELECT id, sku, name, category, unit, current_stock, avg_cost,
+            "SELECT id, sku, name, category, unit, current_stock, avg_cost, suggested_price,
                     COALESCE(current_stock, 0) * COALESCE(avg_cost, 0) AS inventory_value
              FROM {$wpdb->prefix}htw_products
              ORDER BY category, name",

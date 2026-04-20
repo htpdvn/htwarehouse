@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(php *)",
+      "Bash(grep -n 'trim\\($supplier_name' /www/wwwroot/thebanker.online/wp-content/plugins/htwarehouse/includes/Pages/PurchaseOrderPage.php)",
+      "Bash(grep -n 'if \\(! $po\\)' /www/wwwroot/thebanker.online/wp-content/plugins/htwarehouse/includes/Pages/PurchaseOrderPage.php)",
+      "Read(//var/www/html/**)",
+      "Read(//var/www/**)",
+      "Read(//root/**)",
+      "Bash(find / -maxdepth 4 -name \"wp-config.php\")",
+      "Bash(git *)",
+      "Bash(grep *)",
+      "Bash(./vendor/bin/phpunit)"
+    ]
+  }
+}

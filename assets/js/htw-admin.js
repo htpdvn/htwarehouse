@@ -251,7 +251,7 @@
         form: {
           id: 0, sku: '', name: '', category: '', unit: 'cái',
           barcode: '', image_url: '', image_attachment_id: 0,
-          notes: '', preview_url: ''
+          notes: '', preview_url: '', product_url: '', suggested_price: 0
         },
 
         init: function () {
@@ -321,7 +321,7 @@
         },
 
         openAdd: function () {
-          this.form = { id: 0, sku: '', name: '', category: '', unit: 'cái', barcode: '', image_url: '', image_attachment_id: 0, notes: '', preview_url: '', product_url: '' };
+          this.form = { id: 0, sku: '', name: '', category: '', unit: 'cái', barcode: '', image_url: '', image_attachment_id: 0, notes: '', preview_url: '', product_url: '', suggested_price: 0 };
           this.catFilter = '';
           this.catShow   = false;
           this.modal = true;
@@ -352,7 +352,8 @@
             category: self.form.category, unit: self.form.unit,
             barcode: self.form.barcode, image_url: self.form.image_url,
             image_attachment_id: self.form.image_attachment_id,
-            notes: self.form.notes, product_url: self.form.product_url
+            notes: self.form.notes, product_url: self.form.product_url,
+            suggested_price: self.form.suggested_price || 0
           }, function (res) {
             self.saving = false;
             self.alertType = res.success ? 'success' : 'error';
@@ -718,7 +719,8 @@
                 qty: i.qty != null ? String(i.qty) : '',
                 sale_price: i.sale_price != null ? String(i.sale_price) : '',
                 avg_cost: p ? parseFloat(p.avg_cost || 0) : parseFloat(i.cogs_per_unit || 0),
-                current_stock: p ? parseFloat(p.current_stock || 0) : 0
+                current_stock: p ? parseFloat(p.current_stock || 0) : 0,
+                suggested_price: p ? parseFloat(p.suggested_price || 0) : 0
               };
             })
           };
@@ -727,7 +729,7 @@
         },
 
         addItem: function () {
-          this.form.items.push({ product_id: '', qty: '', sale_price: '', avg_cost: 0, current_stock: 0 });
+          this.form.items.push({ product_id: '', qty: '', sale_price: '', avg_cost: 0, current_stock: 0, suggested_price: 0 });
         },
 
         removeItem: function (idx) {
@@ -756,11 +758,13 @@
         onProductChange: function (item) {
           var p = this.products.find(function (x) { return x.id == item.product_id; });
           if (p) {
-            item.avg_cost      = parseFloat(p.avg_cost || 0);
-            item.current_stock = parseFloat(p.current_stock || 0);
+            item.avg_cost        = parseFloat(p.avg_cost || 0);
+            item.current_stock   = parseFloat(p.current_stock || 0);
+            item.suggested_price = parseFloat(p.suggested_price || 0);
           } else {
-            item.avg_cost      = 0;
-            item.current_stock = 0;
+            item.avg_cost        = 0;
+            item.current_stock   = 0;
+            item.suggested_price = 0;
           }
         },
 
@@ -1977,7 +1981,8 @@
 
         init: function () {
           var _runAt = this.lastStatus && this.lastStatus.run_at;
-          this.lastRun = _runAt ? this._fmtDt(_runAt) : null;
+          this.lastRun  = _runAt ? this._fmtDt(_runAt) : null;
+          this.scheduled = !!nextRun;   // init from server-rendered value
           this.fetchStatus();
         },
 
@@ -2053,8 +2058,6 @@
           });
         },
 
-        // D6 fix: download via AJAX endpoint with nonce + auth check.
-        // Uses a hidden form POST so the browser triggers a file download.
         downloadSnapshot: function (s) {
           var form = document.createElement('form');
           form.method = 'POST';
@@ -2072,6 +2075,21 @@
           document.body.appendChild(form);
           form.submit();
           document.body.removeChild(form);
+        },
+
+        // Force-reschedule cron after bug fix (or when cron was lost)
+        reschedule: function () {
+          var self = this;
+          if (!confirm('Xoá lịch cũ và đặt lại lịch tự động hàng ngày?')) return;
+          HTWApp.request('htw_snapshot_reschedule', {}, function (res) {
+            if (res.success) {
+              self.scheduled  = res.data.is_scheduled;
+              self.nextRunStr = res.data.next_run || null;
+              self.showToast(res.data.message || 'Đặt lịch thành công!');
+            } else {
+              self.showToast(res.data || 'Đặt lịch thất bại.', 'error');
+            }
+          });
         },
 
         rowCnt: function (s, key) {

@@ -28,6 +28,14 @@ window._htwNextRun = <?php echo $next_run ? wp_json_encode(date_i18n('d/m/Y H:i'
                 :class="scheduled ? 'htw-badge-success' : 'htw-badge-warning'"
                 x-text="scheduled ? 'Auto: Bật' : 'Auto: Tắt'">
             </span>
+            <button
+                x-show="!scheduled"
+                class="htw-btn htw-btn-ghost htw-btn-sm"
+                @click="reschedule()"
+                title="Đặt lại cron hàng ngày">
+                <span class="dashicons dashicons-clock" style="font-size:.9rem;"></span>
+                Đặt lại lịch
+            </button>
             <button class="htw-btn htw-btn-primary" @click="createSnapshot()" :disabled="creating">
                 <span x-show="creating" class="htw-spinner"></span>
                 <span x-show="!creating" class="dashicons dashicons-plus-alt" style="font-size:.9rem;"></span>

@@ -23,7 +23,7 @@ foreach ($orders as &$o) {
 }
 unset($o);
 
-$products = $wpdb->get_results("SELECT id, name, sku, unit, avg_cost, current_stock FROM {$wpdb->prefix}htw_products ORDER BY name", ARRAY_A);
+$products = $wpdb->get_results("SELECT id, name, sku, unit, avg_cost, current_stock, suggested_price FROM {$wpdb->prefix}htw_products ORDER BY name", ARRAY_A);
 ?>
 <script>
     window._htwExports = <?php echo wp_json_encode($orders); ?>;
@@ -178,10 +178,18 @@ $products = $wpdb->get_results("SELECT id, name, sku, unit, avg_cost, current_st
                                         placeholder="0">
                                     <div x-show="item.product_id && parseNum(String(item.qty||'')) > parseFloat(item.current_stock||0)" style="color:#ef4444;font-size:.75rem;white-space:nowrap;">⚠ Vượt tồn kho!</div>
                                 </td>
-                                <td data-label="Giá bán"><input class="htw-input" type="text"
+                                <td data-label="Giá bán">
+                                    <input class="htw-input" type="text"
                                         x-model="item.sale_price"
                                         @blur="var el = $event.target; el.value = fmtNum(parseFloat(item.sale_price) || 0)"
-                                        placeholder="0" style="text-align:right;"></td>
+                                        placeholder="0" style="text-align:right;">
+                                    <div x-show="item.product_id && parseFloat(item.suggested_price) > 0"
+                                        style="font-size:.72rem;color:var(--htw-warning,#f59e0b);margin-top:3px;white-space:nowrap;cursor:pointer;"
+                                        @click="item.sale_price = parseFloat(item.suggested_price)"
+                                        :title="'Nhấn để điền: ' + fmt(item.suggested_price)">
+                                        💡 Đề xuất: <span x-text="fmt(item.suggested_price)"></span>
+                                    </div>
+                                </td>
                                 <td data-label="Giá vốn" style="color:var(--htw-text-muted);font-size:.8rem;" x-text="fmt(item.avg_cost)"></td>
                                 <td data-label="Doanh thu" x-text="fmt(item.qty * item.sale_price)"></td>
                                 <td data-label="Lợi nhuận" :style="{color: (item.qty*(item.sale_price-item.avg_cost))>=0 ? '#22c55e':'#ef4444'}"
@@ -191,12 +199,12 @@ $products = $wpdb->get_results("SELECT id, name, sku, unit, avg_cost, current_st
                         </template>
                     </tbody>
                     <tfoot>
-                        <tr>
+                        <tr class="htw-items-footer-row">
                             <td colspan="3" style="padding:10px 12px;">
                                 <button type="button" class="htw-btn htw-btn-ghost htw-btn-sm" @click="addItem()">+ Thêm dòng</button>
                             </td>
                             <td colspan="2"></td>
-                            <td style="font-weight:700;" x-text="fmt(revenue)"></td>
+                            <td class="htw-items-total-cell" style="font-weight:700;" x-text="fmt(revenue)"></td>
                             <td :style="{fontWeight:700,color:profit>=0?'#22c55e':'#ef4444'}" x-text="fmt(profit)"></td>
                             <td></td>
                         </tr>
@@ -260,7 +268,7 @@ $products = $wpdb->get_results("SELECT id, name, sku, unit, avg_cost, current_st
                     <div style="font-weight:600;margin-bottom:8px;">Sản phẩm đã bán</div>
                     <div class="htw-items-table-wrap" style="margin-bottom:14px;">
                         <table class="htw-table htw-items-table">
-                            <thead>
+                            <thead class="htw-items-thead">
                                 <tr>
                                     <th>Sản phẩm</th>
                                     <th style="text-align:right;">SL</th>
@@ -272,13 +280,13 @@ $products = $wpdb->get_results("SELECT id, name, sku, unit, avg_cost, current_st
                             </thead>
                             <tbody>
                                 <template x-for="item in detailOrder.items" :key="item.id">
-                                    <tr>
-                                        <td x-text="item.product_name || '—'"></td>
-                                        <td style="text-align:right;" x-text="fmtNum(item.qty)"></td>
-                                        <td style="text-align:right;color:var(--htw-text-muted);" x-text="fmt(item.cogs_per_unit)"></td>
-                                        <td style="text-align:right;" x-text="fmt(item.sale_price)"></td>
-                                        <td style="text-align:right;font-weight:600;" x-text="fmt(item.qty * item.sale_price)"></td>
-                                        <td style="text-align:right;font-weight:600;"
+                                    <tr class="htw-item-row">
+                                        <td data-label="Sản phẩm" x-text="item.product_name || '—'"></td>
+                                        <td data-label="Số lượng" style="text-align:right;" x-text="fmtNum(item.qty)"></td>
+                                        <td data-label="Giá vốn" style="text-align:right;color:var(--htw-text-muted);" x-text="fmt(item.cogs_per_unit)"></td>
+                                        <td data-label="Giá bán" style="text-align:right;" x-text="fmt(item.sale_price)"></td>
+                                        <td data-label="Doanh thu" style="text-align:right;font-weight:600;" x-text="fmt(item.qty * item.sale_price)"></td>
+                                        <td data-label="Lợi nhuận" style="text-align:right;font-weight:600;"
                                             :style="{color: parseFloat(item.profit) >= 0 ? '#22c55e' : '#ef4444'}"
                                             x-text="fmt(item.profit)"></td>
                                     </tr>
@@ -404,7 +412,7 @@ $products = $wpdb->get_results("SELECT id, name, sku, unit, avg_cost, current_st
                         <col style="width:13%;">
                         <col style="width:13%;">
                     </colgroup>
-                    <thead>
+                    <thead class="htw-items-thead">
                         <tr>
                             <th style="text-align:center;">
                                 <input type="checkbox" @change="toggleAllReturn($event)" title="Chọn tất cả">

@@ -131,7 +131,7 @@ $products = $wpdb->get_results("SELECT * FROM {$wpdb->prefix}htw_products ORDER 
             <div style="font-weight:600;margin-bottom:8px;color:var(--htw-text);">Danh sách hàng hoá</div>
             <div class="htw-items-table-wrap">
                 <table class="htw-table htw-items-table" style="width:100%;">
-                    <thead>
+                    <thead class="htw-items-thead">
                         <tr>
                             <th style="width:40%;">Sản phẩm</th>
                             <th>Số lượng</th>
@@ -143,33 +143,33 @@ $products = $wpdb->get_results("SELECT * FROM {$wpdb->prefix}htw_products ORDER 
                     </thead>
                     <tbody>
                         <template x-for="(item, idx) in form.items" :key="idx">
-                            <tr>
-                                <td>
+                            <tr class="htw-item-row">
+                                <td data-label="Sản phẩm">
                                     <select class="htw-select" x-model="item.product_id" x-html="'<option value=\'\'>-- Chọn sản phẩm --</option>' + products.map(function(p){return '<option value=\''+p.id+'\''+(item.product_id==p.id?' selected':'')+'>'+p.name+(p.sku?' ['+p.sku+']':'')+'</option>';}).join('')">
                                     </select>
                                 </td>
-                                <td><input class="htw-input" type="text"
+                                <td data-label="Số lượng"><input class="htw-input" type="text"
                                         :value="fmtNum(item.qty)"
                                         @input="item.qty = parseNum($event.target.value)"
                                         @blur="$event.target.value = fmtNum(item.qty)"
                                         placeholder="0" style="text-align:right;"></td>
-                                <td><input class="htw-input" type="text"
+                                <td data-label="Đơn giá"><input class="htw-input" type="text"
                                         :value="fmtNum(item.unit_price)"
                                         @input="item.unit_price = parseNum($event.target.value)"
                                         @blur="$event.target.value = fmtNum(item.unit_price)"
                                         placeholder="0" style="text-align:right;"></td>
-                                <td x-text="fmt(item.qty * item.unit_price)"></td>
-                                <td style="color:var(--htw-success);" x-text="fmt(previewAllocated(item))"></td>
-                                <td><button type="button" class="htw-btn htw-btn-danger htw-btn-sm" @click="removeItem(idx)">✕</button></td>
+                                <td data-label="Thành tiền" x-text="fmt(item.qty * item.unit_price)"></td>
+                                <td data-label="Giá vốn (ước)" style="color:var(--htw-success);" x-text="fmt(previewAllocated(item))"></td>
+                                <td class="htw-item-del-cell"><button type="button" class="htw-btn htw-btn-danger htw-btn-sm" @click="removeItem(idx)">✕</button></td>
                             </tr>
                         </template>
                     </tbody>
                     <tfoot>
-                        <tr>
+                        <tr class="htw-items-footer-row">
                             <td colspan="3" style="padding:10px 12px;">
                                 <button type="button" class="htw-btn htw-btn-ghost htw-btn-sm" @click="addItem()">+ Thêm dòng</button>
                             </td>
-                            <td style="font-weight:700;color:var(--htw-text);" x-text="fmt(itemsTotal)"></td>
+                            <td class="htw-items-total-cell" style="font-weight:700;color:var(--htw-text);" x-text="fmt(itemsTotal)"></td>
                             <td colspan="2"></td>
                         </tr>
                     </tfoot>
@@ -178,7 +178,7 @@ $products = $wpdb->get_results("SELECT * FROM {$wpdb->prefix}htw_products ORDER 
 
             <!-- Extra costs -->
             <div style="font-weight:600;margin:20px 0 10px;color:var(--htw-text);">Chi phí lô hàng</div>
-            <div class="htw-form-grid" style="grid-template-columns:repeat(3,1fr);">
+            <div class="htw-form-grid htw-import-fees-grid">
                 <div class="htw-field">
                     <label class="htw-label">Phí vận chuyển (đ)</label>
                     <input class="htw-input" type="text" style="text-align:right;"
@@ -282,7 +282,7 @@ $products = $wpdb->get_results("SELECT * FROM {$wpdb->prefix}htw_products ORDER 
                     <div style="font-weight:600;margin-bottom:8px;color:var(--htw-text);">Danh sách hàng hoá</div>
                     <div class="htw-items-table-wrap">
                         <table class="htw-table htw-items-table" style="width:100%;">
-                            <thead>
+                            <thead class="htw-items-thead">
                                 <tr>
                                     <th style="width:35%;">Sản phẩm</th>
                                     <th>Số lượng</th>
@@ -293,12 +293,12 @@ $products = $wpdb->get_results("SELECT * FROM {$wpdb->prefix}htw_products ORDER 
                             </thead>
                             <tbody>
                                 <template x-for="item in detail.items" :key="item.id">
-                                    <tr>
-                                        <td x-text="item.product_name || productName(item.product_id)"></td>
-                                        <td style="text-align:right;" x-text="fmtNum(item.qty)"></td>
-                                        <td style="text-align:right;" x-text="fmt(item.unit_price)"></td>
-                                        <td style="text-align:right;" x-text="fmt(item.total_cost)"></td>
-                                        <td style="text-align:right;color:var(--htw-success);" x-text="fmt(item.allocated_cost_per_unit)"></td>
+                                    <tr class="htw-item-row">
+                                        <td data-label="Sản phẩm" x-text="item.product_name || productName(item.product_id)"></td>
+                                        <td data-label="Số lượng" style="text-align:right;" x-text="fmtNum(item.qty)"></td>
+                                        <td data-label="Đơn giá" style="text-align:right;" x-text="fmt(item.unit_price)"></td>
+                                        <td data-label="Thành tiền" style="text-align:right;" x-text="fmt(item.total_cost)"></td>
+                                        <td data-label="Giá vốn phân bổ" style="text-align:right;color:var(--htw-success);" x-text="fmt(item.allocated_cost_per_unit)"></td>
                                     </tr>
                                 </template>
                             </tbody>
@@ -307,7 +307,7 @@ $products = $wpdb->get_results("SELECT * FROM {$wpdb->prefix}htw_products ORDER 
 
                     <!-- Extra costs -->
                     <div style="font-weight:600;margin:20px 0 10px;color:var(--htw-text);">Chi phí lô hàng</div>
-                    <div class="htw-form-grid" style="grid-template-columns:repeat(3,1fr);">
+                    <div class="htw-form-grid htw-import-fees-grid">
                         <div class="htw-field">
                             <label class="htw-label">Phí vận chuyển</label>
                             <div class="htw-input" style="display:flex;align-items:center;background:#f1f5f9;cursor:default;" x-text="fmt(detail.shipping_fee)"></div>

@@ -189,18 +189,18 @@ window._htwSuppliersList = <?php echo wp_json_encode($suppliers); ?>;
 
                 <!-- Items -->
                 <div style="font-weight:600;margin-bottom:8px;">Danh sách hàng hoá</div>
-                <div class="htw-table-wrap" style="border-radius:8px;">
-                    <table class="htw-table" style="font-size:.82rem;">
-                        <thead>
+                <div class="htw-items-table-wrap" style="border-radius:8px;">
+                    <table class="htw-table htw-items-table" style="font-size:.82rem;">
+                        <thead class="htw-items-thead">
                             <tr><th>Sản phẩm</th><th>Số lượng</th><th>Đơn giá</th><th>Thành tiền</th></tr>
                         </thead>
                         <tbody>
                             <template x-for="item in detail.items" :key="item.id">
-                                <tr>
-                                    <td x-text="item.product_name || item.product_id"></td>
-                                    <td x-text="fmtQty(item.qty)"></td>
-                                    <td x-text="fmt(item.unit_price)"></td>
-                                    <td x-text="fmt(item.line_total)"></td>
+                                <tr class="htw-item-row">
+                                    <td data-label="Sản phẩm" x-text="item.product_name || item.product_id"></td>
+                                    <td data-label="Số lượng" x-text="fmtQty(item.qty)"></td>
+                                    <td data-label="Đơn giá" x-text="fmt(item.unit_price)"></td>
+                                    <td data-label="Thành tiền" x-text="fmt(item.line_total)"></td>
                                 </tr>
                             </template>
                         </tbody>

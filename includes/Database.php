@@ -8,7 +8,7 @@ class Database
 {
 
     const DB_VERSION_OPTION = 'htw_db_version';
-    const DB_VERSION        = '2.1.0';
+    const DB_VERSION        = '2.2.0';
 
     public static function install(): void
     {
@@ -54,7 +54,8 @@ class Database
                     image_url    TEXT            NOT NULL DEFAULT '',
                     product_url  TEXT            NOT NULL DEFAULT '',
                     current_stock DECIMAL(15,3)  NOT NULL DEFAULT 0,
-                    avg_cost     DECIMAL(15,2)   NOT NULL DEFAULT 0,
+                    avg_cost          DECIMAL(15,2)   NOT NULL DEFAULT 0,
+                    suggested_price   DECIMAL(15,2)   NOT NULL DEFAULT 0,
                     notes        TEXT            NOT NULL DEFAULT '',
                     created_at   DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     updated_at   DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -373,5 +374,21 @@ class Database
              SET supplier_code = CONCAT('NCC-', LPAD(id, 4, '0'))
              WHERE supplier_code = '' OR supplier_code IS NULL"
         );
+
+        // 2f. Add suggested_price column to htw_products (idempotent).
+        $sp_col_exists = $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM information_schema.columns
+             WHERE table_schema = %s
+               AND table_name = %s
+               AND column_name = 'suggested_price'",
+            DB_NAME,
+            $wpdb->prefix . 'htw_products'
+        ));
+        if ((int) $sp_col_exists === 0) {
+            $wpdb->query(
+                "ALTER TABLE {$wpdb->prefix}htw_products
+                 ADD COLUMN suggested_price DECIMAL(15,2) NOT NULL DEFAULT 0 AFTER avg_cost"
+            );
+        }
     }
 }

@@ -486,6 +486,18 @@
 .htw-fees-grid {
   grid-template-columns: repeat(6, 1fr);
 }
+/* ── Import fees grid (3 cột — nhãn dài hơn PO) ─────────────────────────────── */
+.htw-import-fees-grid {
+  grid-template-columns: repeat(3, 1fr);
+}
+/* ── Generic 2-cột grid (suppliers Add/Edit, v.v.) ───────────────────────────── */
+.htw-2col-grid {
+  grid-template-columns: repeat(2, 1fr);
+}
+/* ── Generic 3-cột grid (TX KPI, v.v.) ──────────────────────────────────────── */
+.htw-3col-grid {
+  grid-template-columns: repeat(3, 1fr);
+}
 
 /* ── Named form grid classes (dùng trong modal Exports) ─────────────────────── */
 .htw-export-info-grid {
@@ -715,8 +727,23 @@
     grid-template-columns: 1fr !important;
   }
 
-  /* Fees: 6 cột → 2 cột */
+  /* Fees PO: 6 cột → 2 cột */
   .htw-fees-grid {
+    grid-template-columns: 1fr 1fr !important;
+  }
+
+  /* Import fees: 3 cột → 2 cột */
+  .htw-import-fees-grid {
+    grid-template-columns: 1fr 1fr !important;
+  }
+
+  /* 2-cột grid → 1 cột */
+  .htw-2col-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* 3-cột grid → 1 cột */
+  .htw-3col-grid {
     grid-template-columns: 1fr 1fr !important;
   }
 
@@ -802,6 +829,9 @@
 
   /* Fees: 2 cột → 1 cột */
   .htw-fees-grid { grid-template-columns: 1fr !important; }
+  .htw-import-fees-grid { grid-template-columns: 1fr !important; }
+  .htw-2col-grid { grid-template-columns: 1fr !important; }
+  .htw-3col-grid { grid-template-columns: 1fr !important; }
 
   /* Items card: 1 cột */
   .htw-item-row { grid-template-columns: 1fr; }

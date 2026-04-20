@@ -108,7 +108,7 @@ $suppliers = $wpdb->get_results(
                 <span x-text="form.id ? 'Sửa nhà cung cấp' : 'Thêm nhà cung cấp mới'"></span>
             </div>
 
-            <div class="htw-form-grid" style="grid-template-columns:repeat(2,1fr);">
+            <div class="htw-form-grid htw-2col-grid">
                 <div class="htw-field">
                     <label class="htw-label">Mã NCC <span style="font-size:.75rem;color:var(--htw-text-muted);">(tự sinh nếu để trống)</span></label>
                     <input class="htw-input" type="text" x-model="form.supplier_code" placeholder="VD: NCC-0001" style="width:100%;font-family:monospace;" :disabled="!!form.id" :style="form.id ? 'opacity:.7;background:var(--htw-surface-2);' : ''">
@@ -187,7 +187,7 @@ $suppliers = $wpdb->get_results(
             <template x-if="!txLoading">
                 <div>
                     <!-- KPI Summary -->
-                    <div class="htw-kpi-grid" style="grid-template-columns:repeat(3,1fr);margin:16px 0 20px;">
+                    <div class="htw-kpi-grid htw-3col-grid" style="margin:16px 0 20px;">
                         <div class="htw-kpi-card blue" style="padding:14px 16px;">
                             <div class="htw-kpi-label">Tổng giá trị đơn hàng</div>
                             <div class="htw-kpi-value" style="font-size:1.2rem;" x-text="fmt(txData.total_amount || 0)"></div>
@@ -219,8 +219,8 @@ $suppliers = $wpdb->get_results(
                     <!-- Tab: Purchase Orders -->
                     <div x-show="txTab==='orders'">
                         <div class="htw-table-wrap" style="max-height:380px;overflow-y:auto;">
-                            <table class="htw-table" style="font-size:.85rem;">
-                                <thead>
+                            <table class="htw-table htw-items-table" style="font-size:.85rem;">
+                                <thead class="htw-items-thead">
                                     <tr>
                                         <th>Mã đơn</th>
                                         <th>Ngày đặt</th>
@@ -232,10 +232,10 @@ $suppliers = $wpdb->get_results(
                                 </thead>
                                 <tbody>
                                     <template x-for="po in (txData.pos||[])" :key="po.id">
-                                        <tr>
-                                            <td><span style="font-weight:600;color:var(--htw-primary);" x-text="po.po_code"></span></td>
-                                            <td x-text="fmtDate(po.order_date)"></td>
-                                            <td>
+                                        <tr class="htw-item-row">
+                                            <td data-label="Mã đơn"><span style="font-weight:600;color:var(--htw-primary);" x-text="po.po_code"></span></td>
+                                            <td data-label="Ngày đặt" x-text="fmtDate(po.order_date)"></td>
+                                            <td data-label="Trạng thái">
                                                 <span
                                                     class="htw-badge"
                                                     :class="{
@@ -246,9 +246,9 @@ $suppliers = $wpdb->get_results(
                                                     }"
                                                     x-text="txStatusLabel(po.status)"></span>
                                             </td>
-                                            <td style="text-align:right;font-weight:600;" x-text="fmt(po.total_amount)"></td>
-                                            <td style="text-align:right;color:var(--htw-success);" x-text="fmt(po.amount_paid)"></td>
-                                            <td style="text-align:right;" :style="parseFloat(po.amount_remaining)>0 ? 'color:var(--htw-warning);font-weight:600;' : ''" x-text="fmt(po.amount_remaining)"></td>
+                                            <td data-label="Giá trị" style="text-align:right;font-weight:600;" x-text="fmt(po.total_amount)"></td>
+                                            <td data-label="Đã TT" style="text-align:right;color:var(--htw-success);" x-text="fmt(po.amount_paid)"></td>
+                                            <td data-label="Còn nợ" style="text-align:right;" :style="parseFloat(po.amount_remaining)>0 ? 'color:var(--htw-warning);font-weight:600;' : ''" x-text="fmt(po.amount_remaining)"></td>
                                         </tr>
                                     </template>
                                     <template x-if="!(txData.pos||[]).length">
@@ -275,8 +275,8 @@ $suppliers = $wpdb->get_results(
                             Chưa có lịch sử thanh toán nào.
                         </div>
                         <div class="htw-table-wrap" style="max-height:380px;overflow-y:auto;" x-show="(txData.payments||[]).length">
-                            <table class="htw-table" style="font-size:.85rem;">
-                                <thead>
+                            <table class="htw-table htw-items-table" style="font-size:.85rem;">
+                                <thead class="htw-items-thead">
                                     <tr>
                                         <th>Ngày TT</th>
                                         <th>Mã đơn</th>
@@ -286,11 +286,11 @@ $suppliers = $wpdb->get_results(
                                 </thead>
                                 <tbody>
                                     <template x-for="pmt in (txData.payments||[])" :key="pmt.id">
-                                        <tr>
-                                            <td x-text="fmtDate(pmt.payment_date)"></td>
-                                            <td><span style="font-weight:600;color:var(--htw-primary);" x-text="pmt.po_code"></span></td>
-                                            <td style="text-align:right;font-weight:600;color:var(--htw-success);" x-text="fmt(pmt.amount)"></td>
-                                            <td style="color:var(--htw-text-muted);" x-text="pmt.note || '—'"></td>
+                                        <tr class="htw-item-row">
+                                            <td data-label="Ngày TT" x-text="fmtDate(pmt.payment_date)"></td>
+                                            <td data-label="Mã đơn"><span style="font-weight:600;color:var(--htw-primary);" x-text="pmt.po_code"></span></td>
+                                            <td data-label="Số tiền" style="text-align:right;font-weight:600;color:var(--htw-success);" x-text="fmt(pmt.amount)"></td>
+                                            <td data-label="Ghi chú" style="color:var(--htw-text-muted);" x-text="pmt.note || '—'"></td>
                                         </tr>
                                     </template>
                                 </tbody>

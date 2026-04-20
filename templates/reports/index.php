@@ -40,9 +40,11 @@
             <div style="margin-bottom:14px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
                 <span style="color:var(--htw-text-muted);font-size:.85rem;" x-text="rows.length + ' dòng sản phẩm'"></span>
                 <span style="color:var(--htw-text-muted);">|</span>
-                <span style="font-size:.9rem;">Tổng số lượng tồn kho: <strong style="color:var(--htw-success);" x-text="fmtNum(totalStock, 0) + ' sản phẩm'"></strong></span>
+                <span style="font-size:.9rem;">Tổng SL tồn: <strong style="color:var(--htw-success);" x-text="fmtNum(totalStock, 0) + ' SP'"></strong></span>
                 <span style="color:var(--htw-text-muted);">|</span>
                 <span style="font-size:.9rem;">Tổng giá trị kho: <strong style="color:var(--htw-info);" x-text="fmt(totalInvValue)"></strong></span>
+                <span style="color:var(--htw-text-muted);">|</span>
+                <span style="font-size:.9rem;">DT tiềm năng: <strong style="color:var(--htw-warning,#f59e0b);" x-text="fmt(rows.reduce(function(s,r){ return s + (parseFloat(r.suggested_price)>0 ? parseFloat(r.suggested_price)*parseFloat(r.current_stock) : 0); }, 0))"></strong></span>
             </div>
             <div class="htw-table-wrap">
                 <table class="htw-table">
@@ -55,6 +57,8 @@
                             <th>SL tồn kho</th>
                             <th>Giá vốn TB</th>
                             <th>Giá trị lưu kho</th>
+                            <th>Giá bán đề xuất</th>
+                            <th>DT tiềm năng</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -64,9 +68,11 @@
                                 <td style="font-weight:500;" x-text="r.name"></td>
                                 <td x-text="r.category || '—'"></td>
                                 <td x-text="r.unit"></td>
-                                <td :style="{color: parseFloat(r.current_stock) <= 5 ? 'var(--htw-danger)' : 'inherit'}" x-text="fmtNum(r.current_stock, 1)"></td>
+                                <td :style="{color: parseFloat(r.current_stock) <= 5 ? 'var(--htw-danger)' : 'inherit'}" x-text="fmtNum(r.current_stock, 0)"></td>
                                 <td x-text="fmt(r.avg_cost)"></td>
                                 <td style="color:var(--htw-info);" x-text="fmt(r.inventory_value)"></td>
+                                <td style="color:var(--htw-warning,#f59e0b);" x-text="parseFloat(r.suggested_price)>0 ? fmt(r.suggested_price) : '—'"></td>
+                                <td style="color:var(--htw-warning,#f59e0b);font-weight:600;" x-text="parseFloat(r.suggested_price)>0 ? fmt(parseFloat(r.suggested_price)*parseFloat(r.current_stock)) : '—'"></td>
                             </tr>
                         </template>
                     </tbody>
@@ -97,10 +103,10 @@
                             <td x-text="r.sku || '—'"></td>
                             <td style="font-weight:500;" x-text="r.name"></td>
                             <td x-text="r.unit"></td>
-                            <td x-text="fmtNum(r.opening_stock, 1)"></td>
-                            <td style="color:var(--htw-success);" x-text="fmtNum(r.qty_in, 1)"></td>
-                            <td style="color:var(--htw-warning);" x-text="fmtNum(r.qty_out, 1)"></td>
-                            <td style="font-weight:700;" x-text="fmtNum(r.closing_stock, 1)"></td>
+                            <td x-text="fmtNum(r.opening_stock, 0)"></td>
+                            <td style="color:var(--htw-success);" x-text="fmtNum(r.qty_in, 0)"></td>
+                            <td style="color:var(--htw-warning);" x-text="fmtNum(r.qty_out, 0)"></td>
+                            <td style="font-weight:700;" x-text="fmtNum(r.closing_stock, 0)"></td>
                             <td x-text="fmt(r.avg_cost)"></td>
                         </tr>
                     </template>

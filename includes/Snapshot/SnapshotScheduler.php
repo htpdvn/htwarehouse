@@ -45,7 +45,11 @@ class SnapshotScheduler
 
     /**
      * Schedule the daily snapshot event if not already scheduled.
-     * Also fires immediately on first activation (hook registered after init).
+     * Called on 'init' hook (every request) and explicitly on plugin activation.
+     *
+     * IMPORTANT: Do NOT clear-and-reschedule on every request — that resets the
+     * next-run timestamp to tomorrow 02:00 on every pageview, so the cron job
+     * never actually fires. Only schedule when NO event is currently registered.
      */
     public function schedule(): void
     {
@@ -54,16 +58,13 @@ class SnapshotScheduler
         // may not be present. Register it inline to prevent silent failures.
         add_filter('cron_schedules', [$this, 'add_daily_schedule']);
 
-        // Always clear any existing (possibly non-repeating) event first,
-        // then re-schedule as recurring. Previously the early-return guard
-        // caused a one-time event to persist permanently (BUG: Non-repeating).
+        // Only schedule if not already scheduled — preserve the existing timestamp
+        // so the cron can actually fire at the correct time.
         if (wp_next_scheduled(self::HOOK_NAME)) {
-            $this->clear_schedule();
+            return;
         }
 
         // Next run: tomorrow at 02:00 AM local time (server time), then repeat daily.
-        // MUST use a future timestamp — passing time() (past by the time the page
-        // renders) causes WordPress to treat it as a one-time event with no recurrence.
         $first_run = strtotime('tomorrow 02:00');
         wp_schedule_event($first_run, 'htw_daily', self::HOOK_NAME);
     }
