@@ -1123,6 +1123,22 @@
         // Performance tab filter state
         perfFilter: 'all',   // 'all' | 'increase' | 'maintain' | 'review'
 
+        // Stock tab sort state
+        stockSortKey: '',
+        stockSortAsc: false,
+
+        // Movement tab sort state
+        movementSortKey: '',
+        movementSortAsc: false,
+
+        // Profit-by-product tab sort state
+        profitProductSortKey: '',
+        profitProductSortAsc: false,
+
+        // Profit-by-channel tab sort state
+        profitChannelSortKey: '',
+        profitChannelSortAsc: false,
+
         // Supplier scorecard tab state
         supplierSortKey: 'avg_lead_time_days',
         supplierSortAsc: true,
@@ -1150,6 +1166,26 @@
             self.sortKey = self.tab === 'product_performance' ? 'performance_score' : '';
             self.sortAsc = false;
             self.perfFilter = 'all';
+            // Stock tab: reset sort
+            if (self.tab === 'stock') {
+              self.stockSortKey = '';
+              self.stockSortAsc = false;
+            }
+            // Movement tab: reset sort
+            if (self.tab === 'movement') {
+              self.movementSortKey = '';
+              self.movementSortAsc = false;
+            }
+            // Profit-by-product tab: reset sort
+            if (self.tab === 'profit_by_product') {
+              self.profitProductSortKey = '';
+              self.profitProductSortAsc = false;
+            }
+            // Profit-by-channel tab: reset sort
+            if (self.tab === 'profit_by_channel') {
+              self.profitChannelSortKey = '';
+              self.profitChannelSortAsc = false;
+            }
             // Supplier scorecard: reset sort + render chart after DOM update
             if (self.tab === 'supplier_scorecard') {
               self.supplierSortKey = 'avg_lead_time_days';
@@ -1188,6 +1224,126 @@
         // Supplier scorecard: SKU comparison data (only SKUs bought from >=2 suppliers)
         get supplierSkuRows() {
           return (this.summary && this.summary.sku_comparison) ? this.summary.sku_comparison : [];
+        },
+
+        // Stock tab: sorted rows
+        get stockRows() {
+          var self = this;
+          var key = self.stockSortKey;
+          var asc = self.stockSortAsc;
+          if (!key) return self.rows || [];
+          return (self.rows || []).slice().sort(function (a, b) {
+            // For DT tiềm năng, compute on the fly
+            var av, bv;
+            if (key === 'potential_revenue') {
+              av = parseFloat(a.suggested_price) > 0 ? parseFloat(a.suggested_price) * parseFloat(a.current_stock) : 0;
+              bv = parseFloat(b.suggested_price) > 0 ? parseFloat(b.suggested_price) * parseFloat(b.current_stock) : 0;
+            } else {
+              av = parseFloat(a[key]);
+              bv = parseFloat(b[key]);
+            }
+            if (!isNaN(av) && !isNaN(bv)) return asc ? (av - bv) : (bv - av);
+            var as2 = String(a[key] || ''), bs2 = String(b[key] || '');
+            return asc ? as2.localeCompare(bs2) : bs2.localeCompare(as2);
+          });
+        },
+
+        stockSort: function (key) {
+          if (this.stockSortKey === key) {
+            this.stockSortAsc = !this.stockSortAsc;
+          } else {
+            this.stockSortKey = key;
+            this.stockSortAsc = false; // default: descending (highest first)
+          }
+        },
+
+        stockSortIcon: function (key) {
+          if (this.stockSortKey !== key) return ' ↕';
+          return this.stockSortAsc ? ' ↑' : ' ↓';
+        },
+
+        // Movement tab: sorted rows
+        get movementRows() {
+          var self = this;
+          var key = self.movementSortKey;
+          var asc = self.movementSortAsc;
+          if (!key) return self.rows || [];
+          return (self.rows || []).slice().sort(function (a, b) {
+            var av = parseFloat(a[key]), bv = parseFloat(b[key]);
+            if (!isNaN(av) && !isNaN(bv)) return asc ? (av - bv) : (bv - av);
+            var as2 = String(a[key] || ''), bs2 = String(b[key] || '');
+            return asc ? as2.localeCompare(bs2) : bs2.localeCompare(as2);
+          });
+        },
+
+        movementSort: function (key) {
+          if (this.movementSortKey === key) {
+            this.movementSortAsc = !this.movementSortAsc;
+          } else {
+            this.movementSortKey = key;
+            this.movementSortAsc = false;
+          }
+        },
+
+        movementSortIcon: function (key) {
+          if (this.movementSortKey !== key) return ' ↕';
+          return this.movementSortAsc ? ' ↑' : ' ↓';
+        },
+
+        // Profit-by-product tab: sorted rows
+        get profitProductRows() {
+          var self = this;
+          var key = self.profitProductSortKey;
+          var asc = self.profitProductSortAsc;
+          if (!key) return self.rows || [];
+          return (self.rows || []).slice().sort(function (a, b) {
+            var av = parseFloat(a[key]), bv = parseFloat(b[key]);
+            if (!isNaN(av) && !isNaN(bv)) return asc ? (av - bv) : (bv - av);
+            var as2 = String(a[key] || ''), bs2 = String(b[key] || '');
+            return asc ? as2.localeCompare(bs2) : bs2.localeCompare(as2);
+          });
+        },
+
+        profitProductSort: function (key) {
+          if (this.profitProductSortKey === key) {
+            this.profitProductSortAsc = !this.profitProductSortAsc;
+          } else {
+            this.profitProductSortKey = key;
+            this.profitProductSortAsc = false;
+          }
+        },
+
+        profitProductSortIcon: function (key) {
+          if (this.profitProductSortKey !== key) return ' ↕';
+          return this.profitProductSortAsc ? ' ↑' : ' ↓';
+        },
+
+        // Profit-by-channel tab: sorted rows
+        get profitChannelRows() {
+          var self = this;
+          var key = self.profitChannelSortKey;
+          var asc = self.profitChannelSortAsc;
+          if (!key) return self.rows || [];
+          return (self.rows || []).slice().sort(function (a, b) {
+            var av = parseFloat(a[key]), bv = parseFloat(b[key]);
+            if (!isNaN(av) && !isNaN(bv)) return asc ? (av - bv) : (bv - av);
+            var as2 = String(a[key] || ''), bs2 = String(b[key] || '');
+            return asc ? as2.localeCompare(bs2) : bs2.localeCompare(as2);
+          });
+        },
+
+        profitChannelSort: function (key) {
+          if (this.profitChannelSortKey === key) {
+            this.profitChannelSortAsc = !this.profitChannelSortAsc;
+          } else {
+            this.profitChannelSortKey = key;
+            this.profitChannelSortAsc = false;
+          }
+        },
+
+        profitChannelSortIcon: function (key) {
+          if (this.profitChannelSortKey !== key) return ' ↕';
+          return this.profitChannelSortAsc ? ' ↑' : ' ↓';
         },
 
         // Supplier scorecard: sorted rows

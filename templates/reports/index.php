@@ -54,15 +54,25 @@
                             <th>Tên sản phẩm</th>
                             <th>Danh mục</th>
                             <th>ĐVT</th>
-                            <th>SL tồn kho</th>
-                            <th>Giá vốn TB</th>
-                            <th>Giá trị lưu kho</th>
-                            <th>Giá bán đề xuất</th>
-                            <th>DT tiềm năng</th>
+                            <th style="cursor:pointer;user-select:none;text-align:right;" @click="stockSort('current_stock')">
+                                SL tồn kho<span x-text="stockSortIcon('current_stock')"></span>
+                            </th>
+                            <th style="cursor:pointer;user-select:none;text-align:right;" @click="stockSort('avg_cost')">
+                                Giá vốn TB<span x-text="stockSortIcon('avg_cost')"></span>
+                            </th>
+                            <th style="cursor:pointer;user-select:none;text-align:right;" @click="stockSort('inventory_value')">
+                                Giá trị lưu kho<span x-text="stockSortIcon('inventory_value')"></span>
+                            </th>
+                            <th style="cursor:pointer;user-select:none;text-align:right;" @click="stockSort('suggested_price')">
+                                Giá bán đề xuất<span x-text="stockSortIcon('suggested_price')"></span>
+                            </th>
+                            <th style="cursor:pointer;user-select:none;text-align:right;" @click="stockSort('potential_revenue')">
+                                DT tiềm năng<span x-text="stockSortIcon('potential_revenue')"></span>
+                            </th>
                         </tr>
                     </thead>
                     <tbody>
-                        <template x-for="r in rows" :key="r.id">
+                        <template x-for="r in stockRows" :key="r.id">
                             <tr>
                                 <td x-text="r.sku || '—'"></td>
                                 <td style="font-weight:500;" x-text="r.name"></td>
@@ -90,15 +100,25 @@
                         <th>SKU</th>
                         <th>Tên sản phẩm</th>
                         <th>ĐVT</th>
-                        <th>Tồn đầu kỳ</th>
-                        <th>Nhập</th>
-                        <th>Xuất</th>
-                        <th>Tồn cuối kỳ</th>
-                        <th>Giá vốn TB</th>
+                        <th style="cursor:pointer;user-select:none;text-align:right;" @click="movementSort('opening_stock')">
+                            Tồn đầu kỳ<span x-text="movementSortIcon('opening_stock')"></span>
+                        </th>
+                        <th style="cursor:pointer;user-select:none;text-align:right;" @click="movementSort('qty_in')">
+                            Nhập<span x-text="movementSortIcon('qty_in')"></span>
+                        </th>
+                        <th style="cursor:pointer;user-select:none;text-align:right;" @click="movementSort('qty_out')">
+                            Xuất<span x-text="movementSortIcon('qty_out')"></span>
+                        </th>
+                        <th style="cursor:pointer;user-select:none;text-align:right;" @click="movementSort('closing_stock')">
+                            Tồn cuối kỳ<span x-text="movementSortIcon('closing_stock')"></span>
+                        </th>
+                        <th style="cursor:pointer;user-select:none;text-align:right;" @click="movementSort('avg_cost')">
+                            Giá vốn TB<span x-text="movementSortIcon('avg_cost')"></span>
+                        </th>
                     </tr>
                 </thead>
                 <tbody>
-                    <template x-for="r in rows" :key="r.sku">
+                    <template x-for="r in movementRows" :key="r.sku">
                         <tr>
                             <td x-text="r.sku || '—'"></td>
                             <td style="font-weight:500;" x-text="r.name"></td>
@@ -129,15 +149,25 @@
                             <th>SKU</th>
                             <th>Tên sản phẩm</th>
                             <th>ĐVT</th>
-                            <th>SL bán</th>
-                            <th>Doanh thu</th>
-                            <th>Giá vốn</th>
-                            <th>Lợi nhuận</th>
-                            <th>Margin %</th>
+                            <th style="cursor:pointer;user-select:none;text-align:right;" @click="profitProductSort('total_qty')">
+                                SL bán<span x-text="profitProductSortIcon('total_qty')"></span>
+                            </th>
+                            <th style="cursor:pointer;user-select:none;text-align:right;" @click="profitProductSort('total_revenue')">
+                                Doanh thu<span x-text="profitProductSortIcon('total_revenue')"></span>
+                            </th>
+                            <th style="cursor:pointer;user-select:none;text-align:right;" @click="profitProductSort('total_cogs')">
+                                Giá vốn<span x-text="profitProductSortIcon('total_cogs')"></span>
+                            </th>
+                            <th style="cursor:pointer;user-select:none;text-align:right;" @click="profitProductSort('total_profit')">
+                                Lợi nhuận<span x-text="profitProductSortIcon('total_profit')"></span>
+                            </th>
+                            <th style="cursor:pointer;user-select:none;text-align:right;" @click="profitProductSort('margin_pct')">
+                                Margin %<span x-text="profitProductSortIcon('margin_pct')"></span>
+                            </th>
                         </tr>
                     </thead>
                     <tbody>
-                        <template x-for="r in rows" :key="r.name">
+                        <template x-for="r in profitProductRows" :key="r.name">
                             <tr>
                                 <td x-text="r.sku || '—'"></td>
                                 <td style="font-weight:500;" x-text="r.name"></td>
@@ -170,15 +200,25 @@
                     <thead>
                         <tr>
                             <th>Kênh bán</th>
-                            <th>Số đơn</th>
-                            <th>Doanh thu</th>
-                            <th>Giá vốn</th>
-                            <th>Lợi nhuận</th>
-                            <th>Margin %</th>
+                            <th style="cursor:pointer;user-select:none;text-align:right;" @click="profitChannelSort('total_orders')">
+                                Số đơn<span x-text="profitChannelSortIcon('total_orders')"></span>
+                            </th>
+                            <th style="cursor:pointer;user-select:none;text-align:right;" @click="profitChannelSort('revenue')">
+                                Doanh thu<span x-text="profitChannelSortIcon('revenue')"></span>
+                            </th>
+                            <th style="cursor:pointer;user-select:none;text-align:right;" @click="profitChannelSort('cogs')">
+                                Giá vốn<span x-text="profitChannelSortIcon('cogs')"></span>
+                            </th>
+                            <th style="cursor:pointer;user-select:none;text-align:right;" @click="profitChannelSort('profit')">
+                                Lợi nhuận<span x-text="profitChannelSortIcon('profit')"></span>
+                            </th>
+                            <th style="cursor:pointer;user-select:none;text-align:right;" @click="profitChannelSort('margin_pct')">
+                                Margin %<span x-text="profitChannelSortIcon('margin_pct')"></span>
+                            </th>
                         </tr>
                     </thead>
                     <tbody>
-                        <template x-for="r in rows" :key="r.channel">
+                        <template x-for="r in profitChannelRows" :key="r.channel">
                             <tr>
                                 <td><span :class="'htw-badge htw-badge-' + r.channel" x-text="channelLabel(r.channel)"></span></td>
                                 <td x-text="r.total_orders"></td>
