@@ -8,7 +8,7 @@ class Database
 {
 
     const DB_VERSION_OPTION = 'htw_db_version';
-    const DB_VERSION        = '2.2.0';
+    const DB_VERSION        = '2.3.0';
 
     public static function install(): void
     {
@@ -276,6 +276,38 @@ class Database
                     KEY created_at (created_at),
                     KEY user_id (user_id),
                     KEY object_type_id (object_type, object_id)
+                ) $charset",
+
+            'htw_writeoff_orders' => "
+                CREATE TABLE {$wpdb->prefix}htw_writeoff_orders (
+                    id             BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                    writeoff_code  VARCHAR(50)     NOT NULL,
+                    writeoff_date  DATE            NOT NULL,
+                    reason         ENUM('damaged','expired','defective','obsolete','lost','other') NOT NULL DEFAULT 'damaged',
+                    notes          TEXT            NOT NULL DEFAULT '',
+                    total_qty      DECIMAL(15,3)   NOT NULL DEFAULT 0,
+                    total_cogs     DECIMAL(15,2)   NOT NULL DEFAULT 0,
+                    status         ENUM('draft','confirmed') NOT NULL DEFAULT 'draft',
+                    created_at     DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at     DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    PRIMARY KEY (id),
+                    UNIQUE KEY writeoff_code (writeoff_code),
+                    KEY writeoff_date (writeoff_date),
+                    KEY status (status)
+                ) $charset",
+
+            'htw_writeoff_items' => "
+                CREATE TABLE {$wpdb->prefix}htw_writeoff_items (
+                    id            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                    writeoff_id   BIGINT UNSIGNED NOT NULL,
+                    product_id    BIGINT UNSIGNED NOT NULL,
+                    qty           DECIMAL(15,3)   NOT NULL DEFAULT 0,
+                    cogs_per_unit DECIMAL(15,4)   NOT NULL DEFAULT 0,
+                    total_cogs    DECIMAL(15,2)   NOT NULL DEFAULT 0,
+                    created_at    DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (id),
+                    KEY writeoff_id (writeoff_id),
+                    KEY product_id (product_id)
                 ) $charset",
         ];
 

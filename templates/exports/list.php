@@ -2,6 +2,45 @@
 defined('ABSPATH') || exit;
 global $wpdb;
 
+// ── Ensure write-off tables exist (run on every page load if missing) ─────────
+// This is a fallback in case plugin was updated without reactivation.
+if ($wpdb->get_var($wpdb->prepare(
+    "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = %s AND table_name = %s",
+    DB_NAME,
+    $wpdb->prefix . 'htw_writeoff_orders'
+)) == 0) {
+    require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+    $charset = $wpdb->get_charset_collate();
+    dbDelta("CREATE TABLE {$wpdb->prefix}htw_writeoff_orders (
+        id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+        writeoff_code VARCHAR(50) NOT NULL,
+        writeoff_date DATE NOT NULL,
+        reason ENUM('damaged','expired','defective','obsolete','lost','other') NOT NULL DEFAULT 'damaged',
+        notes TEXT NOT NULL DEFAULT '',
+        total_qty DECIMAL(15,3) NOT NULL DEFAULT 0,
+        total_cogs DECIMAL(15,2) NOT NULL DEFAULT 0,
+        status ENUM('draft','confirmed') NOT NULL DEFAULT 'draft',
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (id),
+        UNIQUE KEY writeoff_code (writeoff_code),
+        KEY writeoff_date (writeoff_date),
+        KEY status (status)
+    ) $charset");
+    dbDelta("CREATE TABLE {$wpdb->prefix}htw_writeoff_items (
+        id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+        writeoff_id BIGINT UNSIGNED NOT NULL,
+        product_id BIGINT UNSIGNED NOT NULL,
+        qty DECIMAL(15,3) NOT NULL DEFAULT 0,
+        cogs_per_unit DECIMAL(15,4) NOT NULL DEFAULT 0,
+        total_cogs DECIMAL(15,2) NOT NULL DEFAULT 0,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (id),
+        KEY writeoff_id (writeoff_id),
+        KEY product_id (product_id)
+    ) $charset");
+}
+
 $orders = $wpdb->get_results(
     "SELECT o.*,
             (SELECT COUNT(*) FROM {$wpdb->prefix}htw_export_items WHERE order_id = o.id) AS item_count,
@@ -24,91 +63,196 @@ foreach ($orders as &$o) {
 unset($o);
 
 $products = $wpdb->get_results("SELECT id, name, sku, unit, avg_cost, current_stock, suggested_price FROM {$wpdb->prefix}htw_products ORDER BY name", ARRAY_A);
+
+// Load write-off orders — wrapped in try/catch in case the table doesn't exist yet
+// (happens if plugin was updated without reactivation)
+$writeoffs = [];
+$writeoff_table_exists = $wpdb->get_var(
+    $wpdb->prepare("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = %s AND table_name = %s", DB_NAME, $wpdb->prefix . 'htw_writeoff_orders')
+);
+if ($writeoff_table_exists) {
+    $writeoffs = $wpdb->get_results(
+        "SELECT wo.*,
+                (SELECT COUNT(*) FROM {$wpdb->prefix}htw_writeoff_items WHERE writeoff_id = wo.id) AS item_count
+         FROM {$wpdb->prefix}htw_writeoff_orders wo
+         ORDER BY wo.writeoff_date DESC, wo.id DESC
+         LIMIT 200",
+        ARRAY_A
+    );
+
+    $writeoff_reason_labels = [
+        'damaged'   => 'Hàng bể/hỏng',
+        'expired'   => 'Hàng hết hạn',
+        'defective' => 'Lỗi nhà sản xuất',
+        'obsolete'  => 'Hàng ứ đọng',
+        'lost'      => 'Mất / hao hụt',
+        'other'     => 'Khác',
+    ];
+
+    foreach ($writeoffs as &$wo) {
+        $wo['items'] = $wpdb->get_results($wpdb->prepare(
+            "SELECT wi.*, p.name AS product_name
+             FROM {$wpdb->prefix}htw_writeoff_items wi
+             LEFT JOIN {$wpdb->prefix}htw_products p ON p.id = wi.product_id
+             WHERE wi.writeoff_id = %d",
+            $wo['id']
+        ), ARRAY_A);
+        $wo['reason_label'] = $writeoff_reason_labels[$wo['reason']] ?? $wo['reason'];
+    }
+    unset($wo);
+}
 ?>
 <script>
     window._htwExports = <?php echo wp_json_encode($orders); ?>;
     window._htwProducts = <?php echo wp_json_encode($products); ?>;
+    window._htwWriteoffs = <?php echo wp_json_encode($writeoffs); ?>;
 </script>
 <div class="htw-wrap" x-data="htwExports">
 
+
     <div class="htw-page-header">
-        <h1 class="htw-page-title"><span class="dashicons dashicons-upload"></span> Xuất kho / Bán hàng</h1>
-        <button class="htw-btn htw-btn-primary" @click="openAdd()">+ Tạo đơn mới</button>
+        <h1 class="htw-page-title"><span class="dashicons dashicons-upload"></span> Xuất kho</h1>
+        <button class="htw-btn htw-btn-primary" @click="exportTab === 'sale' ? openAdd() : openWriteoffAdd()">
+            <span x-text="exportTab === 'sale' ? '+ Tạo đơn bán' : '+ Tạo phiếu hỏng'"></span>
+        </button>
     </div>
 
-    <!-- Filter -->
-    <div class="htw-search-bar">
-        <label class="htw-label" style="white-space:nowrap;">Kênh bán:</label>
-        <select class="htw-select" style="max-width:200px;" x-model="filterChannel">
-            <option value="">Tất cả</option>
-            <option value="facebook">Facebook</option>
-            <option value="tiktok">TikTok Shop</option>
-            <option value="shopee">Shopee</option>
-            <option value="other">Khác</option>
-        </select>
-        <span style="color:var(--htw-text-muted);font-size:.8rem;" x-text="filtered().length + ' đơn'"></span>
+    <!-- Tabs -->
+    <div class="htw-tabs">
+        <button class="htw-tab" :class="{ active: exportTab === 'sale' }" @click="switchExportTab('sale')">
+            Xuất bán
+            <span class="htw-badge htw-badge-draft" x-text="filtered().length + ' đơn'"></span>
+        </button>
+        <button class="htw-tab" :class="{ active: exportTab === 'writeoff' }" @click="switchExportTab('writeoff')">
+            Xuất kho hỏng
+            <span class="htw-badge htw-badge-writeoff" x-text="writeoffOrders.length + ' phiếu'"></span>
+        </button>
     </div>
 
-    <!-- Table -->
-    <div class="htw-table-wrap">
-        <table class="htw-table">
-            <thead>
-                <tr>
-                    <th>Mã đơn</th>
-                    <th>Kênh</th>
-                    <th>Ngày</th>
-                    <th>Khách hàng</th>
-                    <th>Số mã SP</th>
-                    <th>Doanh thu</th>
-                    <th>Giá vốn</th>
-                    <th>Lợi nhuận</th>
-                    <th>Trạng thái</th>
-                    <th></th>
-                </tr>
-            </thead>
-            <tbody>
-                <template x-for="o in filtered()" :key="o.id">
-                    <tr :style="o.status === 'fully_returned' ? 'opacity:.65;' : ''">
-                        <td style="font-weight:600;color:var(--htw-primary);" x-text="o.order_code"></td>
-                        <td><span :class="'htw-badge htw-badge-' + o.channel" x-text="channelLabel(o.channel)"></span></td>
-                        <td x-text="fmtDate(o.order_date)"></td>
-                        <td x-text="o.customer_name || '—'"></td>
-                        <td x-text="o.item_count"></td>
-                        <td x-text="fmt(o.total_revenue)"></td>
-                        <td x-text="fmt(o.total_cogs)"></td>
-                        <td :style="{color: parseFloat(o.total_profit)>=0 ? '#22c55e' : '#ef4444'}" x-text="fmt(o.total_profit)"></td>
-                        <td><span :class="'htw-badge htw-badge-' + o.status" x-text="statusLabel(o.status)"></span></td>
-                        <td>
-                            <div style="display:flex;gap:5px;flex-wrap:wrap;">
-                                <template x-if="o.status === 'draft'">
-                                    <button class="htw-btn htw-btn-ghost htw-btn-sm" @click="openEdit(o)">Sửa</button>
-                                </template>
-                                <template x-if="o.status === 'draft'">
-                                    <button class="htw-btn htw-btn-success htw-btn-sm" @click="confirm(o.id)">✓ Xác nhận</button>
-                                </template>
-                                <template x-if="o.status === 'draft'">
-                                    <button class="htw-btn htw-btn-danger htw-btn-sm" @click="del(o.id)">Xoá</button>
-                                </template>
-                                <template x-if="o.status !== 'draft'">
-                                    <button class="htw-btn htw-btn-info htw-btn-sm" @click="openDetail(o.id)">Chi tiết</button>
-                                </template>
-                                <template x-if="o.status === 'confirmed' || o.status === 'partial_return'">
-                                    <button class="htw-btn htw-btn-warning htw-btn-sm" @click="openReturn(o)">↩ Trả hàng</button>
-                                </template>
-                                <template x-if="o.status === 'fully_returned'">
-                                    <span style="color:var(--htw-text-muted);font-size:.8rem;">— đã trả toàn bộ —</span>
-                                </template>
-                            </div>
-                        </td>
-                    </tr>
-                </template>
-                <template x-if="!filtered().length">
+    <!-- Sale tab: filter bar -->
+    <div x-show="exportTab === 'sale'">
+        <div class="htw-search-bar">
+            <label class="htw-label" style="white-space:nowrap;">Kênh bán:</label>
+            <select class="htw-select" style="max-width:200px;" x-model="filterChannel">
+                <option value="">Tất cả</option>
+                <option value="facebook">Facebook</option>
+                <option value="tiktok">TikTok Shop</option>
+                <option value="shopee">Shopee</option>
+                <option value="other">Khác</option>
+            </select>
+            <span style="color:var(--htw-text-muted);font-size:.8rem;" x-text="filtered().length + ' đơn'"></span>
+        </div>
+
+        <!-- Sale orders table -->
+        <div class="htw-table-wrap">
+            <table class="htw-table">
+                <thead>
                     <tr>
-                        <td colspan="10" style="text-align:center;color:var(--htw-text-muted);padding:32px;">Chưa có đơn hàng nào.</td>
+                        <th>Mã đơn</th>
+                        <th>Kênh</th>
+                        <th>Ngày</th>
+                        <th>Khách hàng</th>
+                        <th>Số mã SP</th>
+                        <th>Doanh thu</th>
+                        <th>Giá vốn</th>
+                        <th>Lợi nhuận</th>
+                        <th>Trạng thái</th>
+                        <th></th>
                     </tr>
-                </template>
-            </tbody>
-        </table>
+                </thead>
+                <tbody>
+                    <template x-for="o in filtered()" :key="o.id">
+                        <tr :style="o.status === 'fully_returned' ? 'opacity:.65;' : ''">
+                            <td style="font-weight:600;color:var(--htw-primary);" x-text="o.order_code"></td>
+                            <td><span :class="'htw-badge htw-badge-' + o.channel" x-text="channelLabel(o.channel)"></span></td>
+                            <td x-text="fmtDate(o.order_date)"></td>
+                            <td x-text="o.customer_name || '—'"></td>
+                            <td x-text="o.item_count"></td>
+                            <td x-text="fmt(o.total_revenue)"></td>
+                            <td x-text="fmt(o.total_cogs)"></td>
+                            <td :style="{color: parseFloat(o.total_profit)>=0 ? '#22c55e' : '#ef4444'}" x-text="fmt(o.total_profit)"></td>
+                            <td><span :class="'htw-badge htw-badge-' + o.status" x-text="statusLabel(o.status)"></span></td>
+                            <td>
+                                <div style="display:flex;gap:5px;flex-wrap:wrap;">
+                                    <template x-if="o.status === 'draft'">
+                                        <button class="htw-btn htw-btn-ghost htw-btn-sm" @click="openEdit(o)">Sửa</button>
+                                    </template>
+                                    <template x-if="o.status === 'draft'">
+                                        <button class="htw-btn htw-btn-success htw-btn-sm" @click="confirm(o.id)">✓ Xác nhận</button>
+                                    </template>
+                                    <template x-if="o.status === 'draft'">
+                                        <button class="htw-btn htw-btn-danger htw-btn-sm" @click="del(o.id)">Xoá</button>
+                                    </template>
+                                    <template x-if="o.status !== 'draft'">
+                                        <button class="htw-btn htw-btn-info htw-btn-sm" @click="openDetail(o.id)">Chi tiết</button>
+                                    </template>
+                                    <template x-if="o.status === 'confirmed' || o.status === 'partial_return'">
+                                        <button class="htw-btn htw-btn-warning htw-btn-sm" @click="openReturn(o)">↩ Trả hàng</button>
+                                    </template>
+                                    <template x-if="o.status === 'fully_returned'">
+                                        <span style="color:var(--htw-text-muted);font-size:.8rem;">— đã trả toàn bộ —</span>
+                                    </template>
+                                </div>
+                            </td>
+                        </tr>
+                    </template>
+                    <template x-if="!filtered().length">
+                        <tr>
+                            <td colspan="10" style="text-align:center;color:var(--htw-text-muted);padding:32px;">Chưa có đơn hàng nào.</td>
+                        </tr>
+                    </template>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Writeoff tab: write-off orders table -->
+    <div x-show="exportTab === 'writeoff'">
+        <div class="htw-table-wrap">
+            <table class="htw-table">
+                <thead>
+                    <tr>
+                        <th>Mã phiếu</th>
+                        <th>Ngày</th>
+                        <th>Lý do</th>
+                        <th>Số mã SP</th>
+                        <th>Tổng SL</th>
+                        <th>Tổng giá vốn mất</th>
+                        <th>Trạng thái</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <template x-for="wo in writeoffOrders" :key="wo.id">
+                        <tr :style="wo.status === 'confirmed' ? 'opacity:.65;' : ''">
+                            <td style="font-weight:600;color:var(--htw-danger);" x-text="wo.writeoff_code"></td>
+                            <td x-text="fmtDate(wo.writeoff_date)"></td>
+                            <td><span class="htw-badge htw-badge-writeoff" x-text="wo.reason_label || wo.reason"></span></td>
+                            <td x-text="wo.item_count"></td>
+                            <td x-text="fmtNum(wo.total_qty)"></td>
+                            <td x-text="fmt(wo.total_cogs)"></td>
+                            <td><span :class="'htw-badge htw-badge-' + wo.status" x-text="wo.status === 'confirmed' ? 'Đã xác nhận' : 'Nháp'"></span></td>
+                            <td>
+                                <div style="display:flex;gap:5px;flex-wrap:wrap;">
+                                    <button class="htw-btn htw-btn-ghost htw-btn-sm" @click="openWriteoffDetail(wo.id)">Chi tiết</button>
+                                    <template x-if="wo.status === 'draft'">
+                                        <button class="htw-btn htw-btn-success htw-btn-sm" @click="confirmWriteoff(wo.id)">✓ Xác nhận</button>
+                                    </template>
+                                    <template x-if="wo.status === 'draft'">
+                                        <button class="htw-btn htw-btn-danger htw-btn-sm" @click="delWriteoff(wo.id)">Xoá</button>
+                                    </template>
+                                </div>
+                            </td>
+                        </tr>
+                    </template>
+                    <template x-if="!writeoffOrders.length">
+                        <tr>
+                            <td colspan="8" style="text-align:center;color:var(--htw-text-muted);padding:32px;">Chưa có phiếu xuất kho hỏng nào.</td>
+                        </tr>
+                    </template>
+                </tbody>
+            </table>
+        </div>
     </div>
 
     <!-- Add/Edit Modal -->
@@ -151,7 +295,7 @@ $products = $wpdb->get_results("SELECT id, name, sku, unit, avg_cost, current_st
                         <tr>
                             <th style="width:30%;">Sản phẩm</th>
                             <th>Tồn kho</th>
-                            <th>SL</th>
+                            <th>Số lượng</th>
                             <th>Giá bán</th>
                             <th>Giá vốn TB</th>
                             <th>Doanh thu</th>
@@ -187,7 +331,7 @@ $products = $wpdb->get_results("SELECT id, name, sku, unit, avg_cost, current_st
                                         style="font-size:.72rem;color:var(--htw-warning,#f59e0b);margin-top:3px;white-space:nowrap;cursor:pointer;"
                                         @click="item.sale_price = parseFloat(item.suggested_price)"
                                         :title="'Nhấn để điền: ' + fmt(item.suggested_price)">
-                                        💡 Đề xuất: <span x-text="fmt(item.suggested_price)"></span>
+                                        Giá bán đề xuất: <span x-text="fmt(item.suggested_price)"></span>
                                     </div>
                                 </td>
                                 <td data-label="Giá vốn" style="color:var(--htw-text-muted);font-size:.8rem;" x-text="fmt(item.avg_cost)"></td>
@@ -489,6 +633,176 @@ $products = $wpdb->get_results("SELECT id, name, sku, unit, avg_cost, current_st
                     <span x-show="returnSaving" class="htw-spinner"></span>
                     <span x-text="returnSaving ? 'Đang lưu…' : 'Lưu & Xác nhận đơn trả'"></span>
                 </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Write-off Order Modal (Add/Edit) ────────────────────────────────── -->
+    <div class="htw-modal-overlay" x-show="writeoffModal" x-cloak @click.self="writeoffModal=false">
+        <div class="htw-modal" style="max-width:860px;" @click.stop>
+            <div class="htw-modal-title" style="background:linear-gradient(135deg,#dc2626,#b91c1c);color:#fff;border-radius:8px 8px 0 0;padding:16px 20px;margin:-30px -32px 20px;">
+                <span class="dashicons dashicons-warning" style="font-size:20px;width:20px;height:20px;"></span>
+                <span x-text="woForm.id ? 'Sửa phiếu xuất kho hỏng: ' + woForm.writeoff_code : 'Tạo phiếu xuất kho hỏng'"></span>
+            </div>
+
+            <div class="htw-form-grid htw-writeoff-info-grid">
+                <div class="htw-field">
+                    <label class="htw-label">Ngày xuất kho</label>
+                    <input class="htw-input" type="date" x-model="woForm.writeoff_date">
+                </div>
+                <div class="htw-field">
+                    <label class="htw-label">Lý do xuất hỏng <span style="color:#ef4444;">*</span></label>
+                    <select class="htw-select" x-model="woForm.reason">
+                        <option value="damaged">Hàng bể/hỏng</option>
+                        <option value="expired">Hàng hết hạn</option>
+                        <option value="defective">Lỗi nhà sản xuất</option>
+                        <option value="obsolete">Hàng ứ đọng</option>
+                        <option value="lost">Mất / hao hụt</option>
+                        <option value="other">Khác</option>
+                    </select>
+                </div>
+            </div>
+
+            <div style="font-weight:600;margin-bottom:8px;">Sản phẩm xuất hỏng</div>
+            <div class="htw-items-table-wrap" style="margin-bottom:16px;">
+                <table class="htw-table htw-items-table">
+                    <thead class="htw-items-thead">
+                        <tr>
+                            <th style="width:34%;">Sản phẩm</th>
+                            <th style="text-align:right;">Tồn kho</th>
+                            <th style="text-align:right;">Số lượng</th>
+                            <th style="text-align:right;">Giá vốn (WAC)</th>
+                            <th style="text-align:right;">Giá vốn mất</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <template x-for="(item, idx) in woForm.items" :key="idx">
+                            <tr class="htw-item-row" :style="item.product_id && parseFloat(item.qty||0) > parseFloat(item.current_stock||0) ? 'background:#fff5f5;' : ''">
+                                <td data-label="Sản phẩm">
+                                    <select class="htw-select" x-model="item.product_id" @change="onWriteoffProductChange(item)" x-html="writeoffProductOptions(item.product_id)"></select>
+                                </td>
+                                <td data-label="Tồn kho" style="text-align:right;">
+                                    <span x-show="item.product_id" :style="parseFloat(item.qty||0) > parseFloat(item.current_stock||0) ? 'color:#ef4444;font-weight:700;' : 'color:#22c55e;'" x-text="fmtNum(item.current_stock||0)"></span>
+                                    <span x-show="!item.product_id" style="color:var(--htw-text-muted);">—</span>
+                                </td>
+                                <td data-label="Số lượng">
+                                    <input class="htw-input" type="text"
+                                        x-model="item.qty"
+                                        @blur="item.qty = parseNum(String(item.qty||'')); $event.target.value = fmtNum(item.qty)"
+                                        :style="item.product_id && parseFloat(item.qty||0) > parseFloat(item.current_stock||0) ? 'border-color:#ef4444;text-align:right;' : 'text-align:right;'"
+                                        placeholder="0">
+                                    <div x-show="item.product_id && parseFloat(item.qty||0) > parseFloat(item.current_stock||0)" style="color:#ef4444;font-size:.75rem;white-space:nowrap;">⚠ Vượt tồn kho!</div>
+                                </td>
+                                <td data-label="Giá vốn" style="text-align:right;color:var(--htw-text-muted);font-size:.8rem;" x-text="fmt(item.avg_cost||0)"></td>
+                                <td data-label="Giá vốn mất" style="text-align:right;font-weight:600;color:#ef4444;" x-text="fmt(parseFloat(item.avg_cost||0) * parseFloat(item.qty||0))"></td>
+                                <td class="htw-item-del-cell"><button type="button" class="htw-btn htw-btn-danger htw-btn-sm" @click="removeWriteoffItem(idx)">✕ Xoá</button></td>
+                            </tr>
+                        </template>
+                    </tbody>
+                    <tfoot>
+                        <tr class="htw-items-footer-row">
+                            <td colspan="3" style="padding:10px 12px;">
+                                <button type="button" class="htw-btn htw-btn-ghost htw-btn-sm" @click="addWriteoffItem()">+ Thêm dòng</button>
+                            </td>
+                            <td colspan="2" class="htw-items-total-cell" style="text-align:right;padding-right:12px;font-weight:700;color:#ef4444;" x-text="fmt(woTotalCogs)"></td>
+                            <td></td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+
+            <!-- Impact preview -->
+            <div x-show="woTotalQty > 0" style="background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:12px;margin-bottom:16px;font-size:.85rem;">
+                <div style="font-weight:700;margin-bottom:6px;color:#991b1b;">📊 Tác động lên kho hàng:</div>
+                <div style="display:flex;gap:20px;flex-wrap:wrap;">
+                    <span>Tổng số lượng: <strong x-text="fmtNum(woTotalQty)"></strong></span>
+                    <span>Giá vốn mất (chi phí): <strong style="color:#ef4444;" x-text="fmt(woTotalCogs)"></strong></span>
+                </div>
+                <div style="margin-top:6px;font-size:.78rem;color:#991b1b;">
+                    <span class="dashicons dashicons-info" style="font-size:14px;vertical-align:middle;"></span>
+                    Xuất kho hỏng <strong>không ghi nhận doanh thu</strong>. Giá vốn mất ảnh hưởng báo cáo lợi nhuận.
+                </div>
+            </div>
+
+            <div class="htw-field" style="margin-bottom:16px;">
+                <label class="htw-label">Ghi chú nội bộ</label>
+                <textarea class="htw-textarea" x-model="woForm.notes" style="min-height:50px;" placeholder="Mô tả chi tiết tình trạng hàng hỏng, nguyên nhân..."></textarea>
+            </div>
+
+            <div class="htw-modal-footer">
+                <button class="htw-btn htw-btn-ghost" @click="writeoffModal=false">Huỷ</button>
+                <button class="htw-btn htw-btn-danger" @click="saveWriteoff()" :disabled="woSaving">
+                    <span x-show="woSaving" class="htw-spinner"></span>
+                    <span x-text="woSaving ? 'Đang lưu…' : 'Lưu phiếu nháp'"></span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Write-off Detail Modal ─────────────────────────────────────────── -->
+    <div class="htw-modal-overlay" x-show="writeoffDetailModal" x-cloak @click.self="writeoffDetailModal=false">
+        <div class="htw-modal" style="max-width:700px;" @click.stop>
+            <div class="htw-modal-title">
+                <span class="dashicons dashicons-warning" style="color:#dc2626;"></span>
+                <span>Chi tiết phiếu xuất kho hỏng</span>
+                <template x-if="woDetail">
+                    <span style="font-weight:400;color:var(--htw-text-muted);" x-text="' — ' + (woDetail.writeoff_code || '')"></span>
+                </template>
+            </div>
+
+            <template x-if="woDetail">
+                <div>
+                    <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
+                        <span class="htw-badge htw-badge-writeoff" x-text="woDetail.reason_label || woDetail.reason"></span>
+                        <span :class="'htw-badge htw-badge-' + woDetail.status" x-text="woDetail.status === 'confirmed' ? 'Đã xác nhận' : 'Nháp'"></span>
+                        <span style="color:var(--htw-text-muted);font-size:.8rem;align-self:center;" x-text="fmtDate(woDetail.writeoff_date)"></span>
+                    </div>
+
+                    <div class="htw-export-summary-grid" style="margin-bottom:16px;">
+                        <div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:12px;text-align:center;">
+                            <div style="color:var(--htw-text-muted);font-size:.75rem;margin-bottom:4px;">TỔNG SỐ LƯỢNG</div>
+                            <div style="font-weight:700;color:var(--htw-danger);font-size:1.1rem;" x-text="fmtNum(woDetail.total_qty)"></div>
+                        </div>
+                        <div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:12px;text-align:center;">
+                            <div style="color:var(--htw-text-muted);font-size:.75rem;margin-bottom:4px;">GIÁ VỐN MẤT</div>
+                            <div style="font-weight:700;color:#dc2626;font-size:1.1rem;" x-text="fmt(woDetail.total_cogs)"></div>
+                        </div>
+                    </div>
+
+                    <div style="font-weight:600;margin-bottom:8px;">Sản phẩm đã xuất hỏng</div>
+                    <div class="htw-items-table-wrap" style="margin-bottom:14px;">
+                        <table class="htw-table htw-items-table">
+                            <thead class="htw-items-thead">
+                                <tr>
+                                    <th>Sản phẩm</th>
+                                    <th style="text-align:right;">SL</th>
+                                    <th style="text-align:right;">Giá vốn (WAC)</th>
+                                    <th style="text-align:right;">Giá vốn mất</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <template x-for="item in woDetail.items" :key="item.id">
+                                    <tr class="htw-item-row">
+                                        <td data-label="Sản phẩm" x-text="item.product_name || '—'"></td>
+                                        <td data-label="Số lượng" style="text-align:right;" x-text="fmtNum(item.qty)"></td>
+                                        <td data-label="Giá vốn" style="text-align:right;color:var(--htw-text-muted);" x-text="fmt(item.cogs_per_unit)"></td>
+                                        <td data-label="Giá vốn mất" style="text-align:right;font-weight:600;color:#dc2626;" x-text="fmt(item.total_cogs)"></td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div x-show="woDetail.notes" style="margin-bottom:16px;">
+                        <div style="font-weight:600;margin-bottom:4px;">Ghi chú</div>
+                        <div style="color:var(--htw-text-muted);font-size:.85rem;background:#f8f9fa;padding:10px;border-radius:6px;" x-text="woDetail.notes"></div>
+                    </div>
+                </div>
+            </template>
+
+            <div class="htw-modal-footer">
+                <button class="htw-btn htw-btn-ghost" @click="writeoffDetailModal=false">Đóng</button>
             </div>
         </div>
     </div>

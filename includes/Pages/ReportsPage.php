@@ -116,6 +116,21 @@ class ReportsPage
     private static function report_current_stock(): array
     {
         global $wpdb;
+
+        // Get write-off qty per product (all confirmed write-offs)
+        $writeoff_qty = $wpdb->get_results(
+            "SELECT wi.product_id, SUM(wi.qty) AS writeoff_qty
+             FROM {$wpdb->prefix}htw_writeoff_items wi
+             INNER JOIN {$wpdb->prefix}htw_writeoff_orders wo ON wo.id = wi.writeoff_id
+             WHERE wo.status = 'confirmed'
+             GROUP BY wi.product_id",
+            ARRAY_A
+        );
+        $wo_map = [];
+        foreach ($writeoff_qty as $r) {
+            $wo_map[(int) $r['product_id']] = (float) $r['writeoff_qty'];
+        }
+
         $rows = $wpdb->get_results(
             "SELECT id, sku, name, category, unit, current_stock, avg_cost, suggested_price,
                     COALESCE(current_stock, 0) * COALESCE(avg_cost, 0) AS inventory_value
@@ -123,19 +138,25 @@ class ReportsPage
              ORDER BY category, name",
             ARRAY_A
         );
-        $total_value     = 0.0;
-        $total_stock_qty = 0.0;
+
+        $total_value      = 0.0;
+        $total_stock_qty  = 0.0;
+        $total_writeoff_qty = 0.0;
         foreach ($rows as $row) {
             $iv = (float) ($row['inventory_value'] ?? 0);
-            $total_value     += $iv;
-            // BUG-08 fix: compute total_stock_qty server-side so frontend
-            // does not need to (and cannot incorrectly) recompute it.
+            $total_value      += $iv;
             $total_stock_qty += (float) ($row['current_stock'] ?? 0);
+            $pid = (int) $row['id'];
+            $wq  = $wo_map[$pid] ?? 0.0;
+            $total_writeoff_qty += $wq;
+            $row['writeoff_qty'] = $wq;
         }
+
         return [
-            'rows'                 => $rows,
+            'rows'                  => $rows,
             'total_inventory_value' => $total_value,
-            'total_stock_qty'      => $total_stock_qty,
+            'total_stock_qty'       => $total_stock_qty,
+            'total_writeoff_qty'    => $total_writeoff_qty,
         ];
     }
 
@@ -191,6 +212,17 @@ class ReportsPage
             $from, $to
         ), ARRAY_A);
 
+        // Confirmed write-offs IN-PERIOD — these count as qty_out (goods leaving inventory)
+        $confirmed_writeoffs = $wpdb->get_results($wpdb->prepare(
+            "SELECT wi.product_id, SUM(wi.qty) AS qty_writeoff
+             FROM {$wpdb->prefix}htw_writeoff_items wi
+             INNER JOIN {$wpdb->prefix}htw_writeoff_orders wo ON wo.id = wi.writeoff_id
+             WHERE wo.status = 'confirmed'
+               AND wo.writeoff_date BETWEEN %s AND %s
+             GROUP BY wi.product_id",
+            $from, $to
+        ), ARRAY_A);
+
         $products = $wpdb->get_results(
             "SELECT id, sku, name, unit, current_stock, avg_cost
              FROM {$wpdb->prefix}htw_products ORDER BY name",
@@ -198,9 +230,10 @@ class ReportsPage
         );
 
         // Index by product_id for O(1) lookup
-        $qty_in_map  = [];
-        $qty_out_map = [];
-        $qty_ret_map = [];
+        $qty_in_map     = [];
+        $qty_out_map    = [];
+        $qty_ret_map    = [];
+        $qty_writeoff_map = [];
 
         foreach ($confirmed_imports as $row) {
             $qty_in_map[(int) $row['product_id']] = (float) $row['qty'];
@@ -211,6 +244,9 @@ class ReportsPage
         foreach ($confirmed_returns as $row) {
             $qty_ret_map[(int) $row['product_id']] = (float) $row['qty_ret'];
         }
+        foreach ($confirmed_writeoffs as $row) {
+            $qty_writeoff_map[(int) $row['product_id']] = (float) $row['qty_writeoff'];
+        }
 
         $rows = [];
         $has_discrepancy = false;
@@ -218,22 +254,19 @@ class ReportsPage
         foreach ($products as $p) {
             $pid = (int) $p['id'];
 
-            $qty_in      = $qty_in_map[$pid]  ?? 0.0;
-            $qty_sold    = $qty_out_map[$pid]  ?? 0.0;
-            $qty_ret     = $qty_ret_map[$pid]  ?? 0.0;
-            // NET out = sold in period - returns from in-period sales
-            $qty_out     = max(0.0, $qty_sold - $qty_ret);
+            $qty_in       = $qty_in_map[$pid]       ?? 0.0;
+            $qty_sold     = $qty_out_map[$pid]      ?? 0.0;
+            $qty_ret      = $qty_ret_map[$pid]       ?? 0.0;
+            $qty_writeoff = $qty_writeoff_map[$pid] ?? 0.0;
+            // NET out = sold in period - returns from in-period sales - write-offs
+            $qty_out     = max(0.0, $qty_sold - $qty_ret - $qty_writeoff);
             $closing     = (float) $p['current_stock'];
 
             // Opening derived from inventory identity:
             //   closing = opening + qty_in - qty_out
             //   opening = closing - qty_in + qty_out
-            // This is always mathematically consistent with closing because
-            // current_stock already reflects all historical + in-period changes.
             $raw_opening = $closing - $qty_in + $qty_out;
 
-            // Negative opening means stock went below zero during the period
-            // (data integrity issue — flag but still display 0).
             if ($raw_opening < 0) {
                 $has_discrepancy = true;
                 $discrepancy_products[] = [
@@ -252,6 +285,7 @@ class ReportsPage
                 'opening_stock' => $opening,
                 'qty_in'        => $qty_in,
                 'qty_out'       => $qty_out,
+                'qty_writeoff'  => $qty_writeoff,
                 'closing_stock' => $closing,
                 'avg_cost'      => $p['avg_cost'],
             ];

@@ -670,6 +670,8 @@
       return {
         orders:   orders,
         products: products,
+        exportTab:    'sale',
+        writeoffOrders: window._htwWriteoffs || [],
         modal:         false,
         detailModal:   false,
         detailOrder:   null,
@@ -678,6 +680,15 @@
         returnSaving:  false,
         saving:        false,
         filterChannel: '',
+        // Writeoff state
+        writeoffModal:       false,
+        writeoffDetailModal: false,
+        woDetail:            null,
+        woSaving:           false,
+        woForm: {
+          id: 0, writeoff_code: '', writeoff_date: new Date().toISOString().split('T')[0],
+          reason: 'damaged', notes: '', items: []
+        },
         returnForm: {
           export_order_id:   0,
           export_order_code: '',
@@ -695,6 +706,11 @@
         filtered: function () {
           var ch = this.filterChannel;
           return this.orders.filter(function (o) { return !ch || o.channel === ch; });
+        },
+
+        // ── Tab switching ───────────────────────────────────────────────────
+        switchExportTab: function (tab) {
+          this.exportTab = tab;
         },
 
         get revenue() { return this.form.items.reduce(function (s, i) { return s + this.parseNum(i.qty||0) * this.parseNum(i.sale_price||0); }, 0); },
@@ -1089,6 +1105,135 @@
 
           var w = window.open('', '_blank', 'width=800,height=600');
           if (w) { w.document.write(html); w.document.close(); }
+        },
+
+        // ════════════════════════════════════════════════════════════════════
+        //  WRITE-OFF METHODS
+        // ════════════════════════════════════════════════════════════════════
+
+        writeoffProductOptions: function (selectedId) {
+          var prods = this.products || [];
+          var opts = '<option value="">-- Chọn sản phẩm --</option>';
+          for (var i = 0; i < prods.length; i++) {
+            var p = prods[i];
+            var sel = (String(p.id) === String(selectedId)) ? ' selected' : '';
+            var stock = isNaN(parseFloat(p.current_stock)) ? 0 : parseFloat(p.current_stock);
+            opts += '<option value="' + p.id + '"' + sel + '>'
+                  + p.name + (p.sku ? ' [' + p.sku + ']' : '')
+                  + ' (tồn: ' + stock + ')'
+                  + '</option>';
+          }
+          return opts;
+        },
+
+        onWriteoffProductChange: function (item) {
+          var p = this.products.find(function (x) { return x.id == item.product_id; });
+          if (p) {
+            item.avg_cost      = parseFloat(p.avg_cost || 0);
+            item.current_stock = parseFloat(p.current_stock || 0);
+          } else {
+            item.avg_cost      = 0;
+            item.current_stock = 0;
+          }
+        },
+
+        addWriteoffItem: function () {
+          this.woForm.items.push({ product_id: '', qty: '', avg_cost: 0, current_stock: 0 });
+        },
+
+        removeWriteoffItem: function (idx) {
+          this.woForm.items.splice(idx, 1);
+        },
+
+        get woTotalQty() {
+          var self = this;
+          return (self.woForm.items || []).reduce(function (s, i) {
+            return s + self.parseNum(i.qty || 0);
+          }, 0);
+        },
+
+        get woTotalCogs() {
+          var self = this;
+          return (self.woForm.items || []).reduce(function (s, i) {
+            return s + self.parseNum(i.qty || 0) * self.parseNum(i.avg_cost || 0);
+          }, 0);
+        },
+
+        openWriteoffAdd: function () {
+          this.woForm = {
+            id: 0, writeoff_code: '', writeoff_date: new Date().toISOString().split('T')[0],
+            reason: 'damaged', notes: '', items: []
+          };
+          this.addWriteoffItem();
+          this.writeoffModal = true;
+        },
+
+        openWriteoffDetail: function (id) {
+          var self = this;
+          HTWApp.request('htw_writeoff_detail', { id: id }, function (res) {
+            if (res.success) {
+              self.woDetail = res.data;
+              self.writeoffDetailModal = true;
+            } else {
+              alert(res.data || 'Không thể tải chi tiết phiếu.');
+            }
+          });
+        },
+
+        saveWriteoff: function () {
+          var self = this;
+          // Client-side stock validation
+          var overStock = [];
+          self.woForm.items.forEach(function (item) {
+            if (!item.product_id) return;
+            var qty   = self.parseNum(item.qty);
+            var stock = parseFloat(item.current_stock || 0);
+            if (qty > stock) {
+              var p = self.products.find(function (x) { return x.id == item.product_id; });
+              overStock.push((p ? p.name : 'SP #' + item.product_id) + ' (tồn: ' + stock + ', cần: ' + qty + ')');
+            }
+          });
+          if (overStock.length) {
+            alert('Số lượng vượt tồn kho:\n• ' + overStock.join('\n• '));
+            return;
+          }
+          self.woSaving = true;
+          var data = {
+            id: self.woForm.id,
+            writeoff_date: self.woForm.writeoff_date,
+            reason: self.woForm.reason,
+            notes: self.woForm.notes
+          };
+          self.woForm.items.forEach(function (item, idx) {
+            data['items[' + idx + '][product_id]'] = item.product_id;
+            data['items[' + idx + '][qty]']        = item.qty;
+          });
+          HTWApp.request('htw_writeoff_save', data, function (res) {
+            self.woSaving = false;
+            if (res.success) { self.writeoffModal = false; location.reload(); }
+            else             { alert(res.data); }
+          });
+        },
+
+        confirmWriteoff: function (id) {
+          var self = this;
+          if (!confirm('Xác nhận phiếu xuất kho hỏng? Kho hàng sẽ được trừ ngay lập tức.')) return;
+          HTWApp.request('htw_writeoff_confirm', { id: id }, function (res) {
+            if (res.success) {
+              self.writeoffDetailModal = false;
+              location.reload();
+            } else {
+              alert(res.data);
+            }
+          });
+        },
+
+        delWriteoff: function (id) {
+          if (!confirm('Xoá phiếu xuất kho hỏng này?')) return;
+          HTWApp.request('htw_writeoff_delete', { id: id }, function (res) {
+            if (res.success) { location.reload(); }
+            else             { alert(res.data); }
+          });
         },
 
         fmtDate: function (d) {

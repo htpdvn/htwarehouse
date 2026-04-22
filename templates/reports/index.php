@@ -45,6 +45,8 @@
                 <span style="font-size:.9rem;">Tổng giá trị kho: <strong style="color:var(--htw-info);" x-text="fmt(totalInvValue)"></strong></span>
                 <span style="color:var(--htw-text-muted);">|</span>
                 <span style="font-size:.9rem;">DT tiềm năng: <strong style="color:var(--htw-warning,#f59e0b);" x-text="fmt(rows.reduce(function(s,r){ return s + (parseFloat(r.suggested_price)>0 ? parseFloat(r.suggested_price)*parseFloat(r.current_stock) : 0); }, 0))"></strong></span>
+                <span style="color:var(--htw-text-muted);">|</span>
+                <span style="font-size:.9rem;">Tổng xuất hỏng: <strong style="color:var(--htw-danger);" x-text="fmtNum(summary.total_writeoff_qty || 0, 0) + ' SP'"></strong></span>
             </div>
             <div class="htw-table-wrap">
                 <table class="htw-table">
@@ -109,6 +111,9 @@
                         <th style="cursor:pointer;user-select:none;text-align:right;" @click="movementSort('qty_out')">
                             Xuất<span x-text="movementSortIcon('qty_out')"></span>
                         </th>
+                        <th style="cursor:pointer;user-select:none;text-align:right;color:var(--htw-danger);" @click="movementSort('qty_writeoff')">
+                            Hỏng<span x-text="movementSortIcon('qty_writeoff')"></span>
+                        </th>
                         <th style="cursor:pointer;user-select:none;text-align:right;" @click="movementSort('closing_stock')">
                             Tồn cuối kỳ<span x-text="movementSortIcon('closing_stock')"></span>
                         </th>
@@ -126,6 +131,7 @@
                             <td x-text="fmtNum(r.opening_stock, 0)"></td>
                             <td style="color:var(--htw-success);" x-text="fmtNum(r.qty_in, 0)"></td>
                             <td style="color:var(--htw-warning);" x-text="fmtNum(r.qty_out, 0)"></td>
+                            <td :style="{color: r.qty_writeoff > 0 ? 'var(--htw-danger)' : 'inherit'}" x-text="fmtNum(r.qty_writeoff || 0, 0)"></td>
                             <td style="font-weight:700;" x-text="fmtNum(r.closing_stock, 0)"></td>
                             <td x-text="fmt(r.avg_cost)"></td>
                         </tr>

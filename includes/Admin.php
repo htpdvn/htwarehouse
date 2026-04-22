@@ -44,6 +44,11 @@ class Admin
         add_action('wp_ajax_htw_delete_export',      [Pages\ExportPage::class,   'ajax_delete']);
         add_action('wp_ajax_htw_confirm_export',     [Pages\ExportPage::class,   'ajax_confirm']);
         add_action('wp_ajax_htw_export_detail',      [Pages\ExportPage::class,       'ajax_export_detail']);
+        add_action('wp_ajax_htw_writeoff_list',      [Pages\ExportPage::class,       'ajax_writeoff_list']);
+        add_action('wp_ajax_htw_writeoff_save',      [Pages\ExportPage::class,       'ajax_writeoff_save']);
+        add_action('wp_ajax_htw_writeoff_confirm',   [Pages\ExportPage::class,       'ajax_writeoff_confirm']);
+        add_action('wp_ajax_htw_writeoff_detail',    [Pages\ExportPage::class,       'ajax_writeoff_detail']);
+        add_action('wp_ajax_htw_writeoff_delete',    [Pages\ExportPage::class,       'ajax_writeoff_delete']);
         add_action('wp_ajax_htw_save_return',        [Pages\ReturnOrderPage::class,   'ajax_save_return']);
         add_action('wp_ajax_htw_confirm_return',     [Pages\ReturnOrderPage::class,   'ajax_confirm_return']);
         add_action('wp_ajax_htw_return_list',        [Pages\ReturnOrderPage::class,   'ajax_return_list']);

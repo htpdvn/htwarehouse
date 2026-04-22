@@ -25,5 +25,9 @@ class Plugin
         if (is_admin()) {
             Admin::get_instance()->init();
         }
+
+        // Frontend shortcode — also registers the wp_ajax_nopriv AJAX action,
+        // so it must run outside of is_admin() too.
+        \HTW_Shortcode_Inventory::get_instance()->init();
     }
 }

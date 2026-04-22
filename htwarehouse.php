@@ -13,7 +13,7 @@
 defined('ABSPATH') || exit;
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-define('HTW_VERSION',    '1.1.1');
+define('HTW_VERSION',    '1.1.2');
 define('HTW_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('HTW_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('HTW_PLUGIN_FILE', __FILE__);
@@ -52,6 +52,9 @@ require_once __DIR__ . '/vendor/autoload.php';
 if (!class_exists('TCPDF')) {
     require_once __DIR__ . '/vendor/tecnickcom/tcpdf/tcpdf.php';
 }
+
+// ── Frontend Shortcode ────────────────────────────────────────────────────────
+require_once HTW_PLUGIN_DIR . 'includes/Shortcode.php';
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 add_action('plugins_loaded', function () {

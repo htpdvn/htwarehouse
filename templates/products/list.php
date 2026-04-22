@@ -232,7 +232,7 @@ $products = $wpdb->get_results("SELECT * FROM {$wpdb->prefix}htw_products ORDER 
                     <input class="htw-input" x-model="form.suggested_price" placeholder="0" type="number" min="0" step="1000">
                     <small x-show="parseFloat(form.suggested_price) > 0"
                            style="display:block;margin-top:4px;color:var(--htw-warning,#f59e0b);font-size:.8rem;"
-                           x-text="'≈ ' + fmt(form.suggested_price)"></small>
+                           x-text="'= ' + fmt(form.suggested_price)"></small>
                 </div>
             </div>
 
